@@ -5,6 +5,7 @@ import numpy as np
 from copy import deepcopy
 import random
 import math
+
 from nn import NNetWrapper as nnet
 from parameters import Parameters
 from congklak import Congklak

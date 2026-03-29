@@ -1,10 +1,8 @@
 #---------------------------------------
 # -*- coding: utf-8 -*-
 #---------------------------------------
-import numpy as np
 from copy import deepcopy
 import random
-import math
 from congklak import Congklak
 from parameters import Parameters
 

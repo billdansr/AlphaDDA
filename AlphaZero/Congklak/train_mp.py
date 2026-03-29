@@ -3,14 +3,6 @@
 #---------------------------------------
 import numpy as np
 import time
-import os
-import sys
-
-# Refactor: Add the common directory to the python path so we can share logic
-# This assumes you move shared files to c:\Users\hp\Developments\AlphaDDA\common
-common_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'common'))
-if common_path not in sys.path:
-    sys.path.append(common_path)
 
 from nn import NNetWrapper
 from congklak import Congklak
@@ -107,7 +99,8 @@ class Train():
         if player == "alphazero":
             return self.AlphaZero(g, count)
         else:
-            # For simplicity in this scratch version, we'll use a random move if not alphazero
+            # AlphaZero training should not use Classical MCTS rollouts.
+            # Random moves are used if an opponent baseline is needed during training.
             valid_moves = g.Get_valid_moves()
             action = np.random.choice(valid_moves)
             prob = np.zeros(self.params.action_size)
@@ -147,17 +140,16 @@ class Train():
                 pool.join()
                 raise
 
+            # Reverting to original author's concatenation style
+            training_board = []
+            training_prob  = []
             for j in range(num_workers):
                 training_board += output[j][0]
                 training_prob += output[j][1]
                 training_v = np.append(training_v, output[j][2])
 
-            # Congklak doesn't have symetry like Connect4's flip (due to store asymmetry),
-            # so we skip Augment_data or define it carefully. For now, skip.
-            
-            # Syncing with RingBuffer size to avoid memory overflow
             num_new_samples = len(training_board)
-            print(f"Iteration {i}: Adding {num_new_samples} samples to buffer.")
+            logging.info(f"Iteration {i}: Adding {num_new_samples} samples to buffer.")
             
             for j in range(num_new_samples):
                 buf_board.add(training_board[j])

@@ -1,39 +1,35 @@
 #---------------------------------------
 # -*- coding: utf-8 -*-
 #---------------------------------------
+import torch
+import multiprocessing
 
 class Parameters:
     def __init__(self):
         # Game settings for Congklak
-        self.board_x     = 2            # 2 rows (P1 and P2)
-        self.board_y     = 8            # 7 holes + 1 store for each player
-        self.action_size = 7            # Can select one of the 7 houses
-        self.p1          = 1            # Player 1 (Bottom side, indices 0-6, store 7)
-        self.p2          = -1           # Player 2 (Top side, indices 8-14, store 15)
-
-        self.initial_shells = 7         # Typical Indonesian Congklak begins with 7 shells per hole
-        import torch
-        import multiprocessing
+        self.board_x     = 2            
+        self.board_y     = 8            
+        self.action_size = 7            
+        self.p1          = 1            
+        self.p2          = -1           
+        self.initial_shells = 7         
 
         #------------------------
         # AlphaZero Parameters
-        
-        # parallel processing
         is_cuda = torch.cuda.is_available()
-        # Use fewer processes on CPU to avoid overhead; use more on GPU
         self.num_processes_training = 10 if is_cuda else max(1, multiprocessing.cpu_count() - 1)
         self.num_processes_test = 10 if is_cuda else max(1, multiprocessing.cpu_count() - 1)
         
         device_str = "cuda:0" if is_cuda else "cpu"
-        self.devices       = [device_str] * self.num_processes_training
+        self.devices = [device_str] * self.num_processes_training
         
-        #learning parameters
+        # Learning defaults
         self.num_iterations      = 600
         self.num_games           = 30  
         self.checkpoint_interval = 5
         self.num_test            = 10 
 
-        #MCTS
+        # MCTS defaults
         self.num_mcts_sims = 80                
         self.cpuct         = 1.25               
         self.opening_train = 4                  
@@ -42,14 +38,10 @@ class Parameters:
         self.Temp          = 50                 
         self.rnd_rate      = 0.2                
 
-        #Neural Network
+        # Neural Network architecture
         self.input_size     = 20000                   
         self.k_boards       = 1                       
-        self.input_channels = (self.k_boards * 2) + 1 # 1: P_Current, 2: P_Opponent, 3: Current turn flag (if needed) -> Wait, in connect4 it was k_boards * 2 + 1 = 3
-        # For Congklak we'll represent it as: 
-        # channel 1: Current Player's side (7 holes + store)
-        # channel 2: Opponent's side (7 holes + store)
-        # channel 3: Current player turn indicator matrix (all 1s if P1, 0s if P2)
+        self.input_channels = (self.k_boards * 2) + 1 
         self.num_filters    = 256                     
         self.num_filters_p  = 2                       
         self.num_filters_v  = 1                       

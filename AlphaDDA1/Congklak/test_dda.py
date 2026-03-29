@@ -1,17 +1,18 @@
 #---------------------------------------
 # -*- coding: utf-8 -*-
 #---------------------------------------
-import numpy as np
+import os
+
 from congklak import Congklak
 from player import Random_player
 from classical_MCTS import MCTS as ClassicalMCTS
-from AlphaZero_mcts import A_MCTS as AlphaZeroMCTS
-from AlphaDDA1 import A_MCTS as AlphaDDA1MCTS
 from nn import NNetWrapper
 from parameters import Parameters
+
+# These are the local experiment files
+from AlphaZero_mcts import A_MCTS as AlphaZeroMCTS
+from AlphaDDA1 import A_MCTS as AlphaDDA1MCTS
 from minimax import Minimax
-import os
-import time
 
 class Evaluator():
     def __init__(self, num_games=10):

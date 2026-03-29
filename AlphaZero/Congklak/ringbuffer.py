@@ -1,7 +1,6 @@
 #---------------------------------------
 # -*- coding: utf-8 -*-
 #---------------------------------------
-import numpy as np
 
 class RingBuffer:
     def __init__(self, buf_size):

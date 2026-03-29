@@ -18,19 +18,14 @@ class Parameters:
         #------------------------
         # AlphaZero Parameters
         
-        # parallel processing
+        # Evaluation processing
         is_cuda = torch.cuda.is_available()
-        # Use fewer processes on CPU to avoid overhead; use more on GPU
-        self.num_processes_training = 10 if is_cuda else max(1, multiprocessing.cpu_count() - 1)
         self.num_processes_test = 10 if is_cuda else max(1, multiprocessing.cpu_count() - 1)
         
         device_str = "cuda:0" if is_cuda else "cpu"
-        self.devices       = [device_str] * self.num_processes_training
+        self.devices       = [device_str] * self.num_processes_test
         
-        #learning parameters
-        self.num_iterations      = 600
-        self.num_games           = 30  
-        self.checkpoint_interval = 5
+        # Simulation parameters
         self.num_test            = 10 
 
         #MCTS
@@ -50,12 +45,3 @@ class Parameters:
         # channel 1: Current Player's side (7 holes + store)
         # channel 2: Opponent's side (7 holes + store)
         # channel 3: Current player turn indicator matrix (all 1s if P1, 0s if P2)
-        self.num_filters    = 256                     
-        self.num_filters_p  = 2                       
-        self.num_filters_v  = 1                       
-        self.num_res        = 3                       
-        self.epochs         = 1                       
-        self.batch_size     = 2048                    
-        self.lam            = 2e-1                    
-        self.weight_decay   = 1e-4                    
-        self.momentum       = 0.9                     
