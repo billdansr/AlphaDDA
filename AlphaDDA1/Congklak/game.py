@@ -20,6 +20,7 @@ def play():
     params = Parameters()
     net = NNetWrapper(params=params)
     try:
+        print(f"Checking for models in: {os.getcwd()}")
         # Try finding checkpoint.model or the latest numbered one
         checkpoint_file = "checkpoint.model"
         if not os.path.exists(checkpoint_file):

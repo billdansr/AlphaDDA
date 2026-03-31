@@ -12,6 +12,7 @@ from ringbuffer import RingBuffer
 import multiprocessing as mp
 import torch
 import glob
+import os
 import re
 import logging
 import json
@@ -31,6 +32,8 @@ class Train():
         
         try:
             max_num_iter = -1
+            current_dir = os.getcwd()
+            logging.info(f"Looking for checkpoints in: {current_dir}")
             for f in glob.glob("checkpoint_*.model"):
                 match = re.search(r'checkpoint_(\d+).model', f)
                 if match:

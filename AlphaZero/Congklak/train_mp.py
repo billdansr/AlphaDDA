@@ -12,6 +12,7 @@ from ringbuffer import RingBuffer
 import multiprocessing as mp
 import torch
 import glob
+import os
 import re
 import logging
 import json
@@ -34,6 +35,8 @@ class Train():
         try:
             # 1. Find highest numbered checkpoint in the folder
             max_num_iter = -1
+            current_dir = os.getcwd()
+            logging.info(f"Searching for checkpoints in: {current_dir}")
             for f in glob.glob("checkpoint_*.model"):
                 match = re.search(r'checkpoint_(\d+).model', f)
                 if match:
