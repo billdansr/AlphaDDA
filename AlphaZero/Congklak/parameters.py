@@ -30,12 +30,12 @@ class Parameters:
         self.num_test            = 10 
 
         # MCTS defaults
-        self.num_mcts_sims = 80                
+        self.num_mcts_sims = 200                
         self.cpuct         = 1.25               
         self.opening_train = 4                  
         self.opening_test  = 0                  
         self.opening       = self.opening_train 
-        self.Temp          = 50                 
+        self.Temp          = 1.0                 
         self.rnd_rate      = 0.2                
 
         # Neural Network architecture
@@ -45,7 +45,7 @@ class Parameters:
         self.num_filters    = 256                     
         self.num_filters_p  = 2                       
         self.num_filters_v  = 1                       
-        self.num_res        = 3                       
+        self.num_res        = 10                       
         self.epochs         = 1                       
         self.batch_size     = 2048                    
         self.lam            = 2e-1                    
