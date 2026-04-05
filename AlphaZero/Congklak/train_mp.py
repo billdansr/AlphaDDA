@@ -29,8 +29,19 @@ class Train():
         self.params = Parameters()
         self.comp_time = 0
         self.net = NNetWrapper(params=self.params)
+        self.total_training_time = 0
         self.start_iter = 0
         
+        # Load persistent training metadata if it exists
+        self.meta_path = "training_meta.json"
+        if os.path.exists(self.meta_path):
+            try:
+                with open(self.meta_path, "r") as f:
+                    meta = json.load(f)
+                    self.total_training_time = meta.get("total_training_time", 0)
+            except Exception as e:
+                logging.warning(f"Could not load training metadata: {e}")
+
         # Automatically load the latest checkpoint
         try:
             # 1. Find highest numbered checkpoint in the folder
@@ -161,8 +172,17 @@ class Train():
 
             self.Learning(buf_board.Get_buffer_start_end(), buf_prob.Get_buffer_start_end(), buf_v.Get_buffer_start_end(), i)
             self.comp_time = time.time() - start
-            print(f"Iteration {i} completed in {self.comp_time:.2f}s")
+            self.total_training_time += self.comp_time
+            avg_time = self.total_training_time / (i - self.start_iter)
+            logging.info(f"Iteration {i} completed in {self.comp_time:.2f}s (Avg: {avg_time:.2f}s). Total Elapsed: {self.total_training_time/3600:.2f}h")
             
+            # Save persistent metadata
+            try:
+                with open(self.meta_path, "w") as f:
+                    json.dump({"total_training_time": self.total_training_time}, f)
+            except Exception as e:
+                logging.warning(f"Could not save training metadata: {e}")
+
             if i % self.params.checkpoint_interval == 0:
                 print(f"Checkpoint saved at iteration {i}")
 
