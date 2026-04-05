@@ -16,6 +16,7 @@ import os
 import re
 import logging
 import json
+from datetime import datetime
 
 # Set up basic logging to track training progress without scrolling past 
 # thousands of lines of output
@@ -31,6 +32,7 @@ class Train():
         self.net = NNetWrapper(params=self.params)
         self.total_training_time = 0
         self.start_iter = 0
+        self.start_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Load persistent training metadata if it exists
         self.meta_path = "training_meta.json"
@@ -39,6 +41,7 @@ class Train():
                 with open(self.meta_path, "r") as f:
                     meta = json.load(f)
                     self.total_training_time = meta.get("total_training_time", 0)
+                    self.start_date = meta.get("start_date", self.start_date)
             except Exception as e:
                 logging.warning(f"Could not load training metadata: {e}")
 
@@ -174,12 +177,12 @@ class Train():
             self.comp_time = time.time() - start
             self.total_training_time += self.comp_time
             avg_time = self.total_training_time / (i - self.start_iter)
-            logging.info(f"Iteration {i} completed in {self.comp_time:.2f}s (Avg: {avg_time:.2f}s). Total Elapsed: {self.total_training_time/3600:.2f}h")
+            logging.info(f"Iteration {i} completed in {self.comp_time:.2f}s (Avg: {avg_time:.2f}s). Total Elapsed: {self.total_training_time/3600:.2f}h (Started: {self.start_date})")
             
             # Save persistent metadata
             try:
                 with open(self.meta_path, "w") as f:
-                    json.dump({"total_training_time": self.total_training_time}, f)
+                    json.dump({"total_training_time": self.total_training_time, "start_date": self.start_date}, f)
             except Exception as e:
                 logging.warning(f"Could not save training metadata: {e}")
 
