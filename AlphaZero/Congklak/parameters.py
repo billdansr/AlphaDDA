@@ -48,6 +48,6 @@ class Parameters:
         self.num_res        = 10                       
         self.epochs         = 3                       
         self.batch_size     = 2048                    
-        self.lam            = 1e-2                    
+        self.lam            = 5e-3                    
         self.weight_decay   = 1e-4                    
         self.momentum       = 0.9                     
