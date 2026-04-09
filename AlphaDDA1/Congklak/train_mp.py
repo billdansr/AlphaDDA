@@ -175,8 +175,7 @@ class Train():
         self.net.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.net.to_device()
         self.net.train(np.array(training_board), np.array(training_prob), np.array(training_v))
-        save_idx = i if i % self.params.checkpoint_interval == 0 else -1
-        self.net.save_checkpoint(save_idx)
+        self.net.save_checkpoint(i)
 
 if __name__ == '__main__':
     try:
