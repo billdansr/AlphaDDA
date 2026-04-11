@@ -77,7 +77,9 @@ class A_MCTS:
 
             v = 0
             if node.terminal:
-                v = node.winner
+                # winner is absolute (1 or -1). 
+                # v must be relative to node.player to be consistent with NN output.
+                v = node.winner * node.player
             else:
                 # Need to reconstruct game to get NN input
                 temp_g = Congklak()

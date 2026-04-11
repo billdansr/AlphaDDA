@@ -20,6 +20,7 @@ class AlphaZeroEvaluator():
 
         self.num_games = num_games
         self.params = Parameters()
+        self.params.opening = 0 # Force deterministic play for evaluation
         self.net = NNetWrapper(params=self.params)
         
         # Load checkpoint from command line argument if provided
