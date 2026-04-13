@@ -29,17 +29,24 @@ class Train():
     def __init__(self):
         self.params = Parameters()
 
-        # Google Colab Integration: Mount Drive and Change Directory
-        try:
-            import google.colab
-            from google.colab import drive
-            drive.mount('/content/drive')
+        # Google Colab Integration: Set up persistent storage
+        if os.path.exists('/content'):
             colab_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
-            os.makedirs(colab_path, exist_ok=True)
-            os.chdir(colab_path)
-            print(f"Colab detected. Saving checkpoints to: {colab_path}")
-        except ImportError:
-            pass
+            
+            # drive.mount() is interactive and will crash when run via !python script.py.
+            # We check if the drive is already mounted (recommended workflow).
+            if not os.path.exists('/content/drive'):
+                try:
+                    from google.colab import drive
+                    drive.mount('/content/drive')
+                except Exception:
+                    # Silently ignore if mounting fails in a non-interactive shell
+                    print("Note: Drive not mounted. Please run 'drive.mount' in a Colab notebook cell first.")
+            
+            if os.path.exists('/content/drive'):
+                os.makedirs(colab_path, exist_ok=True)
+                os.chdir(colab_path)
+                print(f"Colab environment detected. Saving checkpoints to: {colab_path}")
 
         self.comp_time = 0
         self.net = NNetWrapper(params=self.params)
