@@ -28,6 +28,19 @@ logging.basicConfig(
 class Train():
     def __init__(self):
         self.params = Parameters()
+
+        # Google Colab Integration: Mount Drive and Change Directory
+        try:
+            import google.colab
+            from google.colab import drive
+            drive.mount('/content/drive')
+            colab_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+            os.makedirs(colab_path, exist_ok=True)
+            os.chdir(colab_path)
+            print(f"Colab detected. Saving checkpoints to: {colab_path}")
+        except ImportError:
+            pass
+
         self.comp_time = 0
         self.net = NNetWrapper(params=self.params)
         self.total_training_time = 0
@@ -231,11 +244,7 @@ class Train():
         self.net.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.net.to_device()
         self.net.train(np.array(training_board), np.array(training_prob), np.array(training_v))
-        
-        # Save 'checkpoint.model' every iteration for safety, 
-        # butNumbered ones only at specific intervals to manage disk space.
-        save_idx = i if i % self.params.checkpoint_interval == 0 else -1
-        self.net.save_checkpoint(save_idx)
+        self.net.save_checkpoint(i)
 
 if __name__ == '__main__':
     try:
