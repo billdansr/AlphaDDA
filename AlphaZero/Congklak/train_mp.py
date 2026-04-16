@@ -126,7 +126,7 @@ class Train():
         return schedule
 
     def AlphaZero(self, g, count):
-        amcts = A_MCTS(game=g, net=self.net, params=self.params)
+        amcts = A_MCTS(game=g, net=self.net, params=self.params, is_training=True)
         amcts.num_moves = count
         action = amcts.Run()
         prob = amcts.Get_prob()

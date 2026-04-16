@@ -29,9 +29,10 @@ class Node():
         self.children.append(child)
 
 class A_MCTS:
-    def __init__(self, game, net = None, params = Parameters()):
+    def __init__(self, game, net = None, params = Parameters(), is_training = False):
         self.num_moves = None
         self.params = params
+        self.is_training = is_training
         if net == None:
             self.nn = nnet(params=params)
         else:
@@ -70,15 +71,17 @@ class A_MCTS:
             )
 
     def Run(self):
-        for _ in range(self.params.num_mcts_sims):
+        # Use sims_test if not training
+        sims = self.params.num_mcts_sims if self.is_training else self.params.num_mcts_sims_test
+        for _ in range(sims):
             node = self.root
             while len(node.children) != 0:
                 node = self.Search(node)
 
             v = 0
             if node.terminal:
-                # winner is absolute (1 or -1). 
-                # v must be relative to node.player to be consistent with NN output.
+                # Terminal value from node.player perspective
+                # node.winner is absolute (1 or -1). 
                 v = node.winner * node.player
             else:
                 # Need to reconstruct game to get NN input
@@ -101,6 +104,16 @@ class A_MCTS:
                 else:
                     psa_vector = mask / np.sum(mask)
 
+                # Dirichlet Noise only during training at root node
+                if self.is_training and node == self.root and getattr(self.params, 'dirichlet_alpha', None) is not None:
+                    noise = np.random.dirichlet([self.params.dirichlet_alpha] * len(valid_moves))
+                    noise_full = np.zeros(self.params.action_size)
+                    noise_full[valid_moves] = noise
+                    psa_vector = (1 - self.params.dirichlet_eps) * psa_vector + self.params.dirichlet_eps * noise_full
+                    
+                    # Renormalize to ensure sum=1
+                    psa_vector /= np.sum(psa_vector)
+
                 self.Expand_node(node, psa_vector)
 
             self.Back_prop(node, v)
@@ -118,15 +131,9 @@ class A_MCTS:
 
     def Search(self, node):
         N = np.sum(np.array([i.nsa for i in node.children]))
-        if node.parent is not None:
-            # Standard MCTS search
-            best_child = node.children[np.argmax(np.array([self.l(i.qsa, i.nsa, i.psa, N) for i in node.children]))]
-        else:
-            # Epsilon-greedy for root
-            if np.random.rand() > self.params.rnd_rate:
-                best_child = node.children[np.argmax(np.array([self.l(i.qsa, i.nsa, i.psa, N) for i in node.children]))]
-            else:
-                best_child = random.choice(node.children)
+        # AlphaZero exclusively uses PUCT (ucb-like formula) combined with Dirichlet noise at the root.
+        # Random epsilon-greedy is removed.
+        best_child = node.children[np.argmax(np.array([self.l(i.qsa, i.nsa, i.psa, N) for i in node.children]))]
         return best_child
 
     def l(self, qsa, nsa, psa, N):

@@ -68,7 +68,7 @@ class AlphaZeroEvaluator():
             elif current_type == "minimax":
                 move = Minimax(g).Run()
             elif current_type == "alphazero":
-                az = AlphaZeroMCTS(game=g, net=self.net, params=self.params)
+                az = AlphaZeroMCTS(game=g, net=self.net, params=self.params, is_training=False)
                 az.num_moves = turn
                 move = az.Run()
             g.Play_action(move)
@@ -77,6 +77,8 @@ class AlphaZeroEvaluator():
     def evaluate(self, opponent_type):
         print(f"\nEvaluating AlphaZero vs {opponent_type} over {self.num_games} games...")
         wins, losses, draws = 0, 0, 0
+        p1_wins, p1_losses, p1_draws = 0, 0, 0
+        p2_wins, p2_losses, p2_draws = 0, 0, 0
         
         for i in range(self.num_games):
             # Alternate sides
@@ -89,18 +91,24 @@ class AlphaZeroEvaluator():
 
             if winner == az_side:
                 wins += 1
+                if az_side == self.params.p1: p1_wins += 1
+                else: p2_wins += 1
             elif winner == 0:
                 draws += 1
+                if az_side == self.params.p1: p1_draws += 1
+                else: p2_draws += 1
             else:
                 losses += 1
+                if az_side == self.params.p1: p1_losses += 1
+                else: p2_losses += 1
             
             sys.stdout.write(f"\rGame {i+1}/{self.num_games} | Wins: {wins} Losses: {losses} Draws: {draws}")
             sys.stdout.flush()
 
         print(f"\nFinal Results vs {opponent_type}:")
         print(f"  Win Rate:  {(wins/self.num_games)*100:.1f}%")
-        print(f"  Loss Rate: {(losses/self.num_games)*100:.1f}%")
-        print(f"  Draw Rate: {(draws/self.num_games)*100:.1f}%")
+        print(f"  Breakdown as P1 (First):  Wins: {p1_wins}, Losses: {p1_losses}, Draws: {p1_draws}")
+        print(f"  Breakdown as P2 (Second): Wins: {p2_wins}, Losses: {p2_losses}, Draws: {p2_draws}")
         
         if wins > losses:
             print(f"  STATUS: AlphaZero is DOMINATING {opponent_type}.")

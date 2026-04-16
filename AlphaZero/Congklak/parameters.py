@@ -30,13 +30,15 @@ class Parameters:
         self.num_test            = 10 
 
         # MCTS defaults
-        self.num_mcts_sims = 400                
-        self.cpuct         = 1.25               
-        self.opening_train = 8                  
-        self.opening_test  = 0                  
-        self.opening       = self.opening_train 
-        self.Temp          = 30.0                
-        self.rnd_rate      = 0.1                
+        self.num_mcts_sims      = 800                
+        self.num_mcts_sims_test = 400
+        self.cpuct              = 1.25               
+        self.opening_train      = 4                  
+        self.opening_test       = 0                  
+        self.opening            = self.opening_train 
+        self.Temp               = 1.0                
+        self.dirichlet_alpha    = 0.3
+        self.dirichlet_eps      = 0.25
 
         # Neural Network architecture
         self.input_size     = 20000                   
@@ -48,6 +50,6 @@ class Parameters:
         self.num_res        = 10                       
         self.epochs         = 3                       
         self.batch_size     = 2048                    
-        self.lam            = 5e-3                    
+        self.lam            = 1e-3                    
         self.weight_decay   = 1e-4                    
         self.momentum       = 0.9                     
