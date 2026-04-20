@@ -250,8 +250,22 @@ class Train():
     def Learning(self, training_board, training_prob, training_v, i):
         self.net.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.net.to_device()
-        self.net.train(np.array(training_board), np.array(training_prob), np.array(training_v))
+        
+        pi_loss, v_loss = self.net.train(np.array(training_board), np.array(training_prob), np.array(training_v))
+        
+        # Log to console
+        logging.info(f"Iteration {i} Training: Loss_PI={pi_loss:.4f}, Loss_V={v_loss:.4f}")
+        
+        # Save to CSV for thesis plotting
+        log_file = "training_log.csv"
+        file_exists = os.path.isfile(log_file)
+        with open(log_file, "a") as f:
+            if not file_exists:
+                f.write("iteration,pi_loss,v_loss,timestamp\n")
+            f.write(f"{i},{pi_loss:.6f},{v_loss:.6f},{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            
         self.net.save_checkpoint(i)
+
 
 if __name__ == '__main__':
     try:

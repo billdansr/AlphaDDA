@@ -72,7 +72,9 @@ class AlphaZeroEvaluator():
                 az.num_moves = turn
                 move = az.Run()
             g.Play_action(move)
-        return g.Get_winner()
+        
+        # Return winner and scores for margin analysis
+        return g.Get_winner(), g.board[0][self.params.board_y-1], g.board[1][self.params.board_y-1]
 
     def evaluate(self, opponent_type):
         print(f"\nEvaluating AlphaZero vs {opponent_type} over {self.num_games} games...")
@@ -80,14 +82,19 @@ class AlphaZeroEvaluator():
         p1_wins, p1_losses, p1_draws = 0, 0, 0
         p2_wins, p2_losses, p2_draws = 0, 0, 0
         
+        p1_margins = []
+        p2_margins = []
+        
         for i in range(self.num_games):
             # Alternate sides
             if i % 2 == 0:
-                winner = self.play_game("alphazero", opponent_type)
+                winner, p1_score, p2_score = self.play_game("alphazero", opponent_type)
                 az_side = self.params.p1
+                p1_margins.append(p1_score - p2_score)
             else:
-                winner = self.play_game(opponent_type, "alphazero")
+                winner, p1_score, p2_score = self.play_game(opponent_type, "alphazero")
                 az_side = self.params.p2
+                p2_margins.append(p2_score - p1_score) # Margin from AZ's perspective
 
             if winner == az_side:
                 wins += 1
@@ -105,15 +112,21 @@ class AlphaZeroEvaluator():
             sys.stdout.write(f"\rGame {i+1}/{self.num_games} | Wins: {wins} Losses: {losses} Draws: {draws}")
             sys.stdout.flush()
 
+        avg_p1_margin = sum(p1_margins) / len(p1_margins) if p1_margins else 0
+        avg_p2_margin = sum(p2_margins) / len(p2_margins) if p2_margins else 0
+
         print(f"\nFinal Results vs {opponent_type}:")
         print(f"  Win Rate:  {(wins/self.num_games)*100:.1f}%")
-        print(f"  Breakdown as P1 (First):  Wins: {p1_wins}, Losses: {p1_losses}, Draws: {p1_draws}")
-        print(f"  Breakdown as P2 (Second): Wins: {p2_wins}, Losses: {p2_losses}, Draws: {p2_draws}")
+        print(f"  Breakdown as P1 (First):  Wins: {p1_wins}, Losses: {p1_losses}, Draws: {p1_draws} | Avg Margin: {avg_p1_margin:+.1f}")
+        print(f"  Breakdown as P2 (Second): Wins: {p2_wins}, Losses: {p2_losses}, Draws: {p2_draws} | Avg Margin: {avg_p2_margin:+.1f}")
         
         if wins > losses:
             print(f"  STATUS: AlphaZero is DOMINATING {opponent_type}.")
+        elif wins == losses:
+             print(f"  STATUS: AlphaZero is EVEN with {opponent_type}.")
         else:
             print(f"  STATUS: AlphaZero is STRUGGLING against {opponent_type}.")
+
 
 if __name__ == '__main__':
     # 20 games is usually enough to see if the model is "broken" or "trained"

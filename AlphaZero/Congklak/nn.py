@@ -116,6 +116,10 @@ class NNetWrapper:
         train_loader = torch.utils.data.DataLoader(ds_train, batch_size = self.params.batch_size, shuffle=True, num_workers = 1, pin_memory = False)
         optimizer = optim.SGD(self.net.parameters(), lr = self.params.lam, weight_decay = self.params.weight_decay, momentum = self.params.momentum)
 
+        total_pi_loss = 0
+        total_v_loss = 0
+        count = 0
+
         for epoch in range(self.params.epochs):
             self.net.train()
             for batch_idx, (boards, pis, vs) in enumerate(train_loader):
@@ -128,9 +132,17 @@ class NNetWrapper:
                 total_l.backward()
                 optimizer.step()
 
+                total_pi_loss += l_pi.item()
+                total_v_loss += l_v.item()
+                count += 1
+
         self.net.to('cpu')
         if 'cuda' in self.device:
             torch.cuda.empty_cache()
+
+        return (total_pi_loss / count if count > 0 else 0, 
+                total_v_loss / count if count > 0 else 0)
+
 
     def loss_pi(self, targets, outputs):
         return -torch.sum(targets * outputs)/targets.size()[0]
