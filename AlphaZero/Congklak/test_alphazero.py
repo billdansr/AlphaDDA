@@ -74,7 +74,9 @@ class AlphaZeroEvaluator():
             g.Play_action(move)
         
         # Return winner and scores for margin analysis
-        return g.Get_winner(), g.board[0][self.params.board_y-1], g.board[1][self.params.board_y-1]
+        # P1 store is at index 7, P2 store is at index 15
+        return g.Get_winner(), g.board[7], g.board[15]
+
 
     def evaluate(self, opponent_type):
         print(f"\nEvaluating AlphaZero vs {opponent_type} over {self.num_games} games...")
