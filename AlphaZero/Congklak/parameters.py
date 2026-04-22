@@ -32,13 +32,13 @@ class Parameters:
         # MCTS defaults
         self.num_mcts_sims      = 800                
         self.num_mcts_sims_test = 400
-        self.cpuct              = 1.0                # Lowered from 1.25: more exploitation of policy priors -> concentrated visits -> sharper pi targets
+        self.cpuct              = 1.25               
         self.opening_train      = 4                  
         self.opening_test       = 0                  
         self.opening            = self.opening_train 
         self.Temp               = 1.0                
         self.dirichlet_alpha    = 0.3
-        self.dirichlet_eps      = 0.15               # Lowered from 0.25: less root noise -> NN policy prior has stronger influence
+        self.dirichlet_eps      = 0.25
 
         # Neural Network architecture
         self.input_size     = 20000                   
@@ -48,8 +48,8 @@ class Parameters:
         self.num_filters_p  = 2                       
         self.num_filters_v  = 1                       
         self.num_res        = 10                       
-        self.epochs         = 3                       
-        self.batch_size     = 2048                    
+        self.epochs         = 10                      
+        self.batch_size     = 128                     
         self.lam            = 1e-3                    
         self.weight_decay   = 1e-4                    
         self.momentum       = 0.9                     
