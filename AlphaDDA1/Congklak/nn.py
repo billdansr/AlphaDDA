@@ -4,6 +4,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 import numpy as np
 from parameters import Parameters
 
@@ -102,6 +103,52 @@ class NNetWrapper:
             pi, v = self.net(board)
 
         return torch.exp(pi).data.to('cpu').numpy()[0], v.item()
+
+    def train(self, training_board, training_prob, training_v):
+        device = torch.device(self.device)
+        self.net.to(device)
+
+        training_board = torch.Tensor(training_board)
+        training_prob = torch.Tensor(training_prob)
+        training_v = torch.Tensor(training_v)
+
+        ds_train = torch.utils.data.TensorDataset(training_board, training_prob, training_v)
+        train_loader = torch.utils.data.DataLoader(ds_train, batch_size = self.params.batch_size, shuffle=True, num_workers = 1, pin_memory = False)
+        optimizer = optim.SGD(self.net.parameters(), lr = self.params.lam, weight_decay = self.params.weight_decay, momentum = self.params.momentum)
+
+        total_pi_loss = 0
+        total_v_loss = 0
+        count = 0
+
+        for epoch in range(self.params.epochs):
+            self.net.train()
+            for batch_idx, (boards, pis, vs) in enumerate(train_loader):
+                boards, pis, vs = boards.to(device), pis.to(device), vs.to(device)
+                out_pis, out_vs = self.net(boards)
+                l_pi = self.loss_pi(pis, out_pis)
+                l_v = self.loss_v(vs, out_vs)
+                total_l = l_pi + l_v
+                optimizer.zero_grad()
+                total_l.backward()
+                optimizer.step()
+
+                total_pi_loss += l_pi.item()
+                total_v_loss += l_v.item()
+                count += 1
+
+        self.net.to('cpu')
+        if 'cuda' in self.device:
+            torch.cuda.empty_cache()
+
+        return (total_pi_loss / count if count > 0 else 0, 
+                total_v_loss / count if count > 0 else 0)
+
+
+    def loss_pi(self, targets, outputs):
+        return -torch.sum(targets * outputs)/targets.size()[0]
+
+    def loss_v(self, targets, outputs):
+        return torch.sum((targets - outputs.view(-1)) ** 2)/targets.size()[0]
 
     def save_checkpoint(self, i):
         # Always save to 'checkpoint.model' so it acts as the "latest" reference

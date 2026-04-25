@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 #---------------------------------------
 import os
+import sys
 
 from congklak import Congklak
 from player import Random_player
@@ -18,11 +19,14 @@ class Evaluator():
     def __init__(self, num_games=10):
         # Ensure we look for checkpoints in the script's directory
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(script_dir)
+        if script_dir:
+            os.chdir(script_dir)
 
         self.num_games = num_games
         self.params = Parameters()
         self.net = NNetWrapper(params=self.params)
+        
+        # Load checkpoint
         try:
             checkpoint_file = "checkpoint.model"
             if not os.path.exists(checkpoint_file):
@@ -34,7 +38,7 @@ class Evaluator():
                     self.net.load_checkpoint(idx)
                     print(f"Loaded {latest_checkpoint}")
                 else:
-                    print("No checkpoint found. Using untrained network.")
+                    print("No checkpoint found in directory. Using untrained network.")
             else:
                 self.net.load_checkpoint()
                 print("Loaded latest checkpoint.model")
@@ -63,57 +67,62 @@ class Evaluator():
                 az.num_moves = turn
                 move = az.Run()
             elif current_player_type == "alphadda1":
-                adda = AlphaDDA1MCTS(game=g, net=self.net, params=self.params)
+                # N_MAX=800 is the full strength from the paper.
+                adda = AlphaDDA1MCTS(game=g, net=self.net, params=self.params, N_MAX=800)
                 adda.num_moves = turn
                 move = adda.Run()
             g.Play_action(move)
-        return g.Get_winner()
+        
+        # Return winner and stores for margin analysis
+        return g.Get_winner(), g.board[7], g.board[15]
 
-    def evaluate(self, p1_type, p2_type):
-        print(f"\nEvaluating {p1_type} vs {p2_type} ({self.num_games} games)...")
-        results = {"win_p1": 0, "win_p2": 0, "draw": 0}
+    def evaluate(self, target_ai, opponent_type):
+        print(f"\nEvaluating {target_ai} vs {opponent_type} ({self.num_games} games)...")
+        wins, losses, draws = 0, 0, 0
+        p1_margins, p2_margins = [], []
+        
         for i in range(self.num_games):
             # Alternate who goes first
             if i % 2 == 0:
-                p1, p2 = p1_type, p2_type
-                p1_side = self.params.p1
-                p2_side = self.params.p2
-                is_p1_p1 = True
+                winner, s1, s2 = self.play_game(target_ai, opponent_type)
+                ai_side = self.params.p1
+                p1_margins.append(s1 - s2)
             else:
-                p1, p2 = p2_type, p1_type
-                p1_side = self.params.p2
-                p2_side = self.params.p1
-                is_p1_p1 = False
+                winner, s1, s2 = self.play_game(opponent_type, target_ai)
+                ai_side = self.params.p2
+                p2_margins.append(s2 - s1) # Margin relative to the target_ai
             
-            winner = self.play_game(p1, p2)
-            if winner == p1_side:
-                results["win_p1"] += 1
-            elif winner == p2_side:
-                results["win_p2"] += 1
+            if winner == ai_side:
+                wins += 1
+            elif winner == 0:
+                draws += 1
             else:
-                results["draw"] += 1
+                losses += 1
             
-            # Print intermediate progress
-            print(f"Game {i+1}/{self.num_games}: Winner={winner} ({p1_type} was {'P1' if is_p1_p1 else 'P2'})")
+            sys.stdout.write(f"\rGame {i+1}/{self.num_games} | Wins: {wins} Losses: {losses} Draws: {draws}")
+            sys.stdout.flush()
 
-        print(f"\nFinal Statistics for {p1_type} vs {p2_type}:")
-        total = self.num_games
-        w1 = results['win_p1']
-        w2 = results['win_p2']
-        d = results['draw']
-        print(f"  {p1_type} Wins: {w1} ({w1/total*100:.1f}%)")
-        print(f"  {p2_type} Wins: {w2} ({w2/total*100:.1f}%)")
-        print(f"  Draws:      {d} ({d/total*100:.1f}%)")
+        avg_p1_margin = sum(p1_margins) / len(p1_margins) if p1_margins else 0
+        avg_p2_margin = sum(p2_margins) / len(p2_margins) if p2_margins else 0
+
+        print(f"\nFinal Statistics for {target_ai} vs {opponent_type}:")
+        print(f"  Win Rate:  {(wins/self.num_games)*100:.1f}%")
+        print(f"  Avg Margin as P1: {avg_p1_margin:+.1f}")
+        print(f"  Avg Margin as P2: {avg_p2_margin:+.1f}")
         
-        balance_metric = abs(50 - (w1/total*100))
-        print(f"  Balance Metric (Target 50%): {balance_metric:.1f} offset")
-        return results
+        balance_metric = abs(50 - (wins/self.num_games*100))
+        print(f"  DDA Balance Offset (Target 50% Win Rate): {balance_metric:.1f}%")
+        return wins, losses, draws
 
 if __name__ == '__main__':
-    # Adjust num_games for better statistical significance (e.g., 20)
-    # 4 games is just for a quick smoke test
-    evaluator = Evaluator(num_games=4)
+    # 20 games for a statistically meaningful test of the DDA balance
+    evaluator = Evaluator(num_games=20)
     
-    opponents = ["random", "mcts", "minimax"]
-    for opp in opponents:
-        evaluator.evaluate("alphadda1", opp)
+    # We test both AlphaZero (Fixed Strength) and AlphaDDA1 (Adaptive)
+    # to compare how much closer DDA gets to the 50% "Fun" target.
+    test_types = ["alphazero", "alphadda1"]
+    opponents = ["random", "minimax"]
+    
+    for ai in test_types:
+        for opp in opponents:
+            evaluator.evaluate(ai, opp)

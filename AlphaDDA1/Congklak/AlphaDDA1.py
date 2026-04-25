@@ -5,11 +5,11 @@ import numpy as np
 from copy import deepcopy
 import random
 import math
+from statistics import mean
 
 from nn import NNetWrapper as nnet
 from parameters import Parameters
 from congklak import Congklak
-from statistics import mean
 
 class Node():
     def __init__(self, board, history, player, move = None, psa = 0, terminal = False, winner = 0, parent = None):
@@ -31,12 +31,16 @@ class Node():
         self.children.append(child)
 
 class A_MCTS:
-    def __init__(self, game, net = None, params = Parameters(), num_mean = 1, X0 = 0.0, A = 1.0, N_MAX = 300, states = None):
+    def __init__(self, game, net = None, params = Parameters(), num_mean = 5, N_MAX = 800, states = None):
         self.num_moves = None
         self.params = params
         
+        # DDA parameters
         self.max_num_values = num_mean
-        self.estimated_outcome = []
+        self.estimated_outcome_queue = []
+        self.N_MAX = N_MAX
+        self.N_MIN = 60 # Minimum simulations to maintain basic tactical awareness
+        self.states_history = states if states is not None else []
         
         if net == None:
             self.nn = nnet(params=params)
@@ -45,15 +49,13 @@ class A_MCTS:
 
         # Make the root node.
         self.root = Node(board = game.Get_board(), history = deepcopy(game.seq_boards.buf), player = game.current_player)
-        
-        self.A = A
-        self.X0 = X0
-        self.N_MAX = N_MAX
-        self.states = states if states is not None else []
 
     def softmax(self, x):
-        x = np.exp(x / self.params.Temp)
-        return x/np.sum(x)
+        # Numerically stable softmax
+        x = x.astype(float)
+        x = (x - np.max(x)) / self.params.Temp
+        exp_x = np.exp(x)
+        return exp_x / np.sum(exp_x)
 
     def Expand_node(self, node, psa_vector):
         temp_g = Congklak()
@@ -80,44 +82,46 @@ class A_MCTS:
                 parent = node
             )
 
-    def Store_outcome(self, state):
-        # Store the value of the board state.
-        _, estimated_outcome = self.nn.predict(state)
-        # Add the value to the queue.
-        self.estimated_outcome.append(float(estimated_outcome))
-        # Pop the value if size of the queue is more than the max.
-        if len(self.estimated_outcome) > self.max_num_values:
-            self.estimated_outcome.pop(0)
-
-    def Run(self):
-        # Update estimated outcomes based on current states
-        for s in self.states:
-            self.Store_outcome(s)
+    def Update_DDA_Simulations(self):
+        """
+        Implements AlphaDDA1: Adjusting playing strength based on the predicted game outcome.
+        As defined in PeerJ-CS 1123 (Fujita, 2022).
+        """
+        # 1. Get the current estimated value (v) from the NN
+        # States represent the game history; we use the latest state.
+        temp_g = Congklak()
+        temp_g.board = deepcopy(self.root.board)
+        temp_g.current_player = self.root.player
+        temp_g.seq_boards.buf = deepcopy(self.root.history)
+        
+        _, v = self.nn.predict(temp_g.Get_states())
+        
+        # 2. Update the rolling window of outcomes
+        self.estimated_outcome_queue.append(float(v))
+        if len(self.estimated_outcome_queue) > self.max_num_values:
+            self.estimated_outcome_queue.pop(0)
             
-        # In case states is empty, use current state to have at least one value.
-        if not self.estimated_outcome:
-            temp_g = Congklak()
-            temp_g.board = deepcopy(self.root.board)
-            temp_g.current_player = self.root.player
-            temp_g.seq_boards.buf = deepcopy(self.root.history)
-            self.Store_outcome(temp_g.Get_states())
-
-        # Change the number of simulations.
-        # Since Congklak uses canonical states, mean(v) is already relative to the current player.
-        win_score = mean(self.estimated_outcome)
+        # 3. Calculate average win_score (relative to AI player)
+        win_score = mean(self.estimated_outcome_queue)
         
-        # Calculate simulations using a centered sigmoid-like or logarithmic scale
-        # Base sims (at v=0) is N_MAX / 2.
-        exponent = - self.A * (win_score + self.X0) + math.log10(self.N_MAX / 2)
-        self.params.num_mcts_sims = math.ceil(10**exponent)
+        # 4. Simulation Adjustment Logic:
+        # If AI is winning (win_score > 0), reduce simulations to give the human a chance.
+        # If AI is losing or even (win_score <= 0), use N_MAX.
         
-        # Clipping
-        if self.params.num_mcts_sims < 1:
-            self.params.num_mcts_sims = 1
-        if self.params.num_mcts_sims > self.N_MAX:
+        if win_score > 0:
+            # Linear reduction: N_sim = N_MAX * (1 - win_score)
+            # We clip it to N_MIN so it doesn't become completely random.
+            reduction_factor = 1.0 - (win_score ** 2) # Using squared for smoother drop
+            new_sims = int(self.N_MAX * reduction_factor)
+            self.params.num_mcts_sims = max(self.N_MIN, new_sims)
+        else:
             self.params.num_mcts_sims = self.N_MAX
             
-        print(f"AlphaDDA1: sims set to {self.params.num_mcts_sims} (v_curr={mean(self.estimated_outcome):.3f}, win_score={win_score:.3f})")
+        print(f"AlphaDDA1: v={v:.3f}, avg_v={win_score:.3f} -> Sims: {self.params.num_mcts_sims}")
+
+    def Run(self):
+        # Update simulations before starting MCTS
+        self.Update_DDA_Simulations()
 
         for _ in range(self.params.num_mcts_sims):
             node = self.root
@@ -126,7 +130,9 @@ class A_MCTS:
 
             v = 0
             if node.terminal:
-                v = node.winner
+                # Absolute winner flip perspective: v = winner * node.player
+                # This ensures v is always relative to the player at the leaf.
+                v = node.winner * node.player
             else:
                 temp_g = Congklak()
                 temp_g.board = deepcopy(node.board)
@@ -162,13 +168,8 @@ class A_MCTS:
 
     def Search(self, node):
         N = np.sum(np.array([i.nsa for i in node.children]))
-        if node.parent is not None:
-            best_child = node.children[np.argmax(np.array([self.l(i.qsa, i.nsa, i.psa, N) for i in node.children]))]
-        else:
-            if np.random.rand() > self.params.rnd_rate:
-                best_child = node.children[np.argmax(np.array([self.l(i.qsa, i.nsa, i.psa, N) for i in node.children]))]
-            else:
-                best_child = random.choice(node.children)
+        # PUCT search
+        best_child = node.children[np.argmax(np.array([self.l(i.qsa, i.nsa, i.psa, N) for i in node.children]))]
         return best_child
 
     def l(self, qsa, nsa, psa, N):
@@ -177,11 +178,11 @@ class A_MCTS:
     def Back_prop(self, node, v):
         while node != self.root:
             node.nsa += 1
-            node.wsa += v
-            node.qsa = node.wsa / node.nsa
-            
+            # Flip perspective if parent is a different player
             if node.parent.player != node.player:
                 v = -v
+            node.wsa += v
+            node.qsa = node.wsa / node.nsa
             node = node.parent
 
     def Get_prob(self):

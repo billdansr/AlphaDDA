@@ -116,7 +116,7 @@ class Congklak():
             elif b[15] > b[7]:
                 self.winner = self.params.p2
             else:
-                self.winner = 0.0001 # Draw (almost 0 but distinct?) Wait, let's keep winner = 0 for tie, but since Connect4 uses 0 for non-end, we have to carefully distinguish. AlphaZero handles ties by value = 0.
+                self.winner = 0
             
             return True
         return False
@@ -131,88 +131,38 @@ class Congklak():
             return 0
 
     def Get_states(self):
-        # Return a canonical state from the POV of current_player
-        # Connect4 was shape (channels, x, y) -> (3, x, y)
-        b = self.board
-        
-        state1 = np.zeros(16)
-        state2 = np.zeros(16)
-        
-        # We'll normalize shell counts. They can reach up to 98.
-        # But for CNN we can just use raw integer values or normalize by 98.0
-        # Wait, AlphaZero Connect4 uses exactly 1s and -1s. Here we can use shell counts / 98.0.
-        norm_b = b / 98.0 # Total shells is 98
-        
-        if self.current_player == self.params.p1:
-            state1 = norm_b.copy() # Our shells
-            # Let's frame it as state1 = our view, state2 = we mirror the board exactly?
-            # ACTUALLY, canonical format means it always looks like P1 is playing.
-            canonical_board = norm_b.copy()
-            player_indicator = np.ones((self.params.board_x, self.params.board_y))
-        else:
-            # P2 to move: swap P1 and P2 halves so holes 0-7 are the current player's
-            canonical_board = np.zeros(16)
-            canonical_board[0:8] = norm_b[8:16]
-            canonical_board[8:16] = norm_b[0:8]
-            player_indicator = np.zeros((self.params.board_x, self.params.board_y))
-            
-        # The NN needs k_boards * 2 + 1 channels.
-        # k_boards = 1 -> 3 channels.
-        # In connect4 they did:
-        # channel 1: 1 where P_1 has stones
-        # channel 2: 1 where P_2 has stones
-        # channel 3: turn indicator (all 1 for P1, all 0 for P2)
-        # We can do:
-        # channel 1: Current player's shell counts
-        # channel 2: Opponent's shell counts
-        # channel 3: Current player turn flag (from seq_boards logic if k_boards > 1) 
-        
+        """
+        Return a canonical state from the POV of current_player.
+        Shape: (input_channels, board_x, board_y) -> (3, 2, 8)
+        """
         temp_states = self.seq_boards.Get_buffer()
         states = []
-        for i in range(self.params.k_boards):
-            past_b = temp_states[i] / 98.0
-            if self.current_player == self.params.p1:
-                states.append(past_b[0:8])
-                states.append(past_b[8:16])
-            else:
-                states.append(past_b[8:16])
-                states.append(past_b[0:8])
-
-        if self.current_player == 1:
-            states.append(np.ones(8))
-        else:
-            states.append(np.zeros(8))
-            
-        # Reshape to input_channels x xnum x ynum
-        # But states is shape: we have 3 lists of length 8. That's (3, 8). 
-        # But board is board_x = 2, board_y = 8.
-        # So we should reshape into (3, 2, 8)? No, states append is flat.
         
-        # Let's fix this.
-        # For each frame (k_boards):
-        # We want channel i: our view (2 rows, 8 cols)
-        states = []
+        # Generate canonical representations for current and history frames
         for i in range(self.params.k_boards):
             past_b = temp_states[i] / 98.0
             
-            p1_side = past_b[0:8]
-            p2_side = past_b[8:16]
-            
+            # Canonicalize: Current player's own side is always at Row 0
             if self.current_player == self.params.p1:
-                channel1 = np.vstack((p1_side, p2_side))
-                channel2 = np.vstack((p2_side, p1_side)) # Or something similar. For now let's just make channel 1 = our side of shells, channel 2 = op side.
-                states.append(channel1)
-                states.append(channel2)
+                my_side = past_b[0:8]
+                op_side = past_b[8:16]
             else:
-                channel1 = np.vstack((p2_side, p1_side))
-                channel2 = np.vstack((p1_side, p2_side))
-                states.append(channel1)
-                states.append(channel2)
+                my_side = past_b[8:16]
+                op_side = past_b[0:8]
                 
-        if self.current_player == self.params.p1:
-            states.append(np.ones((2, 8)))
-        else:
-            states.append(np.zeros((2, 8)))
+            # Channel for current player's shells
+            ch1 = np.zeros((2, 8))
+            ch1[0] = my_side
+            
+            # Channel for opponent's shells
+            ch2 = np.zeros((2, 8))
+            ch2[1] = op_side
+            
+            states.append(ch1)
+            states.append(ch2)
+                
+        # Perspective channel: Always 1 because the representation is canonical
+        states.append(np.ones((2, 8)))
             
         return np.array(states)
 
@@ -241,11 +191,11 @@ class Congklak():
             if self.current_player == self.params.p2 and self._is_p1_store(curr_hole):
                 continue
                 
-            # Drop 1
+            # Drop 1 shell
             b[curr_hole] += 1
             shells -= 1
             
-            # If last shell drops
+            # Last shell behavior
             if shells == 0:
                 # 1. Drops in own store -> extra turn
                 if (self.current_player == self.params.p1 and self._is_p1_store(curr_hole)) or \
@@ -253,13 +203,11 @@ class Congklak():
                     extra_turn = True
                     break
                 
-                # 2. Drops in an empty hole (which got 1 right now)
+                # 2. Drops in an empty hole on own side -> capture
                 elif b[curr_hole] == 1:
-                    # Is it our side?
                     if self._is_own_hole(curr_hole, self.current_player):
                         opposite = self._get_opposite_hole(curr_hole)
                         if b[opposite] > 0:
-                            # Capture
                             captured = b[opposite] + 1
                             b[opposite] = 0
                             b[curr_hole] = 0
@@ -268,7 +216,7 @@ class Congklak():
                             b[store_idx] += captured
                     break
                     
-                # 3. Drops in a non-empty hole -> pickup and sow
+                # 3. Drops in a non-empty hole -> pick up and continue sowing
                 elif b[curr_hole] > 1:
                     shells = b[curr_hole]
                     b[curr_hole] = 0
@@ -276,7 +224,6 @@ class Congklak():
         if not extra_turn:
             self.current_player *= -1
             
-        # Optional: handling game end where we need to sweep is done in Check_game_end
         self.seq_boards.add(deepcopy(self.board))
         
 if __name__ == '__main__':
@@ -285,8 +232,14 @@ if __name__ == '__main__':
     
     while not g.Check_game_end():
         print("Valid moves:", g.Get_valid_moves())
-        action = int(input("Move: "))
-        g.Play_action(action)
-        g.Print_board()
+        try:
+            action = int(input("Move (0-6): "))
+            if action in g.Get_valid_moves():
+                g.Play_action(action)
+                g.Print_board()
+            else:
+                print("Invalid move, try again.")
+        except ValueError:
+            print("Please enter a number.")
         
     print("Winner:", g.Get_winner())

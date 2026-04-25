@@ -41,8 +41,11 @@ class A_MCTS:
         self.root = Node(board = game.Get_board(), history = deepcopy(game.seq_boards.buf), player = game.current_player)
 
     def softmax(self, x):
-        x = np.exp(x / self.params.Temp)
-        return x/np.sum(x)
+        # Shifted Softmax for numerical stability
+        x = x.astype(float)
+        x = (x - np.max(x)) / self.params.Temp
+        exp_x = np.exp(x)
+        return exp_x / np.sum(exp_x)
 
     def Expand_node(self, node, psa_vector):
         temp_g = Congklak()

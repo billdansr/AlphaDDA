@@ -93,53 +93,49 @@ class Minimax:
         return v
 
     def Search(self, root):
-        stack = [root] 
-
-        while len(stack) != 0:
-            n = stack.pop()
-
-            if len(n.children) != 0:
-                stack += n.children
-            else:
-                v = 0
-                if n.terminal:
-                    # High value for win, low for loss
-                    # n.winner is the actual winner (1 or -1)
-                    # root.p is the identity of the searching player
-                    if n.winner == root.p:
-                        v = 1000000
-                    elif n.winner == 0:
-                        v = 0
+        def minimax_recursive(node):
+            if len(node.children) == 0:
+                if node.terminal:
+                    if node.winner == root.p:
+                        return 1000000
+                    elif node.winner == 0:
+                        return 0
                     else:
-                        v = -1000000
+                        return -1000000
                 else:
-                    if len(n.children) == 0:
-                        v = self.Evaluate(n.state, root.p)
-                    else:
-                        v = n.value
-
-                n.value = v
-
-                # Propagate value up the tree
-                curr = n
-                while curr.parent != None:
-                    curr = curr.parent
-
-                    if curr.value == None:
-                        curr.value = v
-                    elif curr.p == root.p and curr.value < v:
-                        # Maximize for the root player
-                        curr.value = v
-                    elif curr.p != root.p and curr.value > v:
-                        # Minimize for the opponent player
-                        curr.value = v
+                    return self.Evaluate(node.state, root.p)
+            
+            if node.p == root.p:
+                # Maximizing player
+                best = -float('inf')
+                for child in node.children:
+                    val = minimax_recursive(child)
+                    if val > best:
+                        best = val
+                node.value = best
+                return best
+            else:
+                # Minimizing player
+                best = float('inf')
+                for child in node.children:
+                    val = minimax_recursive(child)
+                    if val < best:
+                        best = val
+                node.value = best
+                return best
         
-        # After propagation, pick the best child of root
         best_val = -float('inf')
-        best_child = root.children[0]
+        best_child = root.children[0] if root.children else root
+        
         for child in root.children:
-            if child.value is not None and child.value > best_val:
-                best_val = child.value
+            val = minimax_recursive(child)
+            child.value = val
+            if val > best_val:
+                best_val = val
                 best_child = child
                 
+        # Fallback if no moves are strictly better, pick the first
+        if best_child is None and root.children:
+            best_child = root.children[0]
+            
         return best_child
