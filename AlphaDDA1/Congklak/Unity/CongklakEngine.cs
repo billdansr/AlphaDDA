@@ -77,7 +77,7 @@ namespace CongklakAI
             return false;
         }
 
-        public void PlayAction(int action)
+        public IEnumerable<(int holeIdx, int shellsInHand)> PlayAction(int action)
         {
             // Action is relative (0..6)
             int startHole = (currentPlayer == 1) ? action : action + 8;
@@ -99,6 +99,9 @@ namespace CongklakAI
                 // Drop 1 shell
                 board[currHole]++;
                 shells--;
+                
+                // YIELD for UI animation: (where we dropped, how many left in hand)
+                yield return (currHole, shells);
                 
                 if (shells == 0)
                 {
@@ -122,6 +125,9 @@ namespace CongklakAI
                                 
                                 int storeIdx = (currentPlayer == 1) ? 7 : 15;
                                 board[storeIdx] += captured;
+                                
+                                // YIELD a special signal for capture animation
+                                yield return (currHole, 0); 
                             }
                         }
                         break; // End of turn
@@ -131,6 +137,9 @@ namespace CongklakAI
                     {
                         shells = board[currHole];
                         board[currHole] = 0;
+                        
+                        // YIELD for UI animation: Picking up shells
+                        yield return (currHole, shells);
                     }
                 }
             }
@@ -147,26 +156,8 @@ namespace CongklakAI
 
         public float[,,] GetStates()
         {
-            // Returns (3, 2, 8) normalized array for the Inference Engine
-            float[,,] states = new float[3, 2, 8];
-            
-            int[] mySideIndices = (currentPlayer == 1) ? Enumerable.Range(0, 8).ToArray() : Enumerable.Range(8, 8).ToArray();
-            int[] opSideIndices = (currentPlayer == 1) ? Enumerable.Range(8, 8).ToArray() : Enumerable.Range(0, 8).ToArray();
-
-            // Channel 0: My shells (Row 0)
-            for (int j = 0; j < 8; j++)
-                StatesSet(states, 0, 0, j, board[mySideIndices[j]] / 98.0f);
-
-            // Channel 1: Opponent shells (Row 1)
-            for (int j = 0; j < 8; j++)
-                StatesSet(states, 1, 1, j, board[opSideIndices[j]] / 98.0f);
-
-            // Channel 2: Perspective (All 1s)
-            for (int i = 0; i < 2; i++)
-                for (int j = 0; j < 8; j++)
-                    StatesSet(states, 2, i, j, 1.0f);
-
-            return states;
+            // Redirect to synchronized central logic in AlphaDDA_MCTS
+            return AlphaDDA_MCTS.GenerateStates(this.board, this.currentPlayer);
         }
 
         private void StatesSet(float[,,] s, int channel, int x, int y, float v)

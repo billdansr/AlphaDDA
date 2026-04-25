@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -53,11 +54,12 @@ namespace CongklakAI
         // Hyperparameters (matched to parameters.py)
         private float cpuct = 1.25f;
         private float rnd_rate = 0.2f;
-        private float temp = 50f;
+        private float temp = 1.0f;
         private int openingLimit = 0; // opening_test = 0
 
         // DDA parameters
-        private int N_MAX = 300;
+        private int N_MAX = 800;
+        private int N_MIN = 60;
         private float A = 1.0f;
         private float X0 = 0.0f;
 
@@ -71,19 +73,29 @@ namespace CongklakAI
         }
 
         /// <summary>
-        /// Runs the MCTS and returns the best move.
+        /// Runs the MCTS as a coroutine to keep inference on the main thread while preventing UI freezes.
         /// </summary>
-        public int Run(int turnCount)
+        public IEnumerator RunCoroutine(int turnCount, Action<int> onComplete)
         {
+            if (onComplete == null) yield break;
+
             // 1. Calculate Dynamic Simulations
+            // 1. DDA: Adjust simulations based on AI confidence
+            // Sync with Python AlphaDDA1.py: squared reduction formula
             var (pi_root, v_root) = brain.Predict(GenerateStates(root.board, root.player));
-            
-            float winScore = v_root; // Current state evaluation
-            float exponent = -A * (winScore + X0) + (float)Math.Log10(N_MAX / 2.0);
-            int numSims = (int)Math.Ceiling(Math.Pow(10, exponent));
-            numSims = Math.Clamp(numSims, 1, N_MAX);
-            
-            Debug.Log($"[AlphaDDA] Sims: {numSims}, AI Confidence: {winScore:F3}");
+            float winScore = v_root;
+            int numSims;
+            if (winScore > 0)
+            {
+                // Reduce simulations when AI is winning (smoother squared reduction)
+                float reductionFactor = 1.0f - (winScore * winScore);
+                numSims = Mathf.Max(N_MIN, (int)(N_MAX * reductionFactor));
+            }
+            else
+            {
+                numSims = N_MAX;
+            }
+            Debug.Log($"[AlphaDDA] v={winScore:F3} -> Sims: {numSims}");
 
             // 2. MCTS Logic
             for (int i = 0; i < numSims; i++)
@@ -99,7 +111,9 @@ namespace CongklakAI
                 float v;
                 if (node.terminal)
                 {
-                    v = node.winner;
+                    // Value must be relative to the player at the node
+                    if (node.winner == 0) v = 0;
+                    else v = (node.winner == node.player) ? 1.0f : -1.0f;
                 }
                 else
                 {
@@ -111,9 +125,12 @@ namespace CongklakAI
 
                 // Backpropagation
                 Backpropagate(node, v);
+
+                // Time-slicing: yield every 20 simulations to keep the UI responsive
+                if (i % 20 == 0) yield return null;
             }
 
-            return DecideMove(turnCount);
+            onComplete(DecideMove(turnCount));
         }
 
         private MCTSNode SelectChild(MCTSNode node)
@@ -144,11 +161,21 @@ namespace CongklakAI
 
         private void ExpandNode(MCTSNode node, float[] piVector)
         {
-            CongklakEngine simEngine = new CongklakEngine();
+            // Create a temporary engine to simulate moves
+            CongklakEngine simEngine = new CongklakEngine(0);
             Array.Copy(node.board, simEngine.board, 16);
             simEngine.currentPlayer = node.player;
 
             List<int> validMoves = simEngine.GetValidMoves();
+            
+            // Jika pemain tidak punya langkah tapi game belum berakhir, ganti pemain (Pass)
+            if (validMoves.Count == 0 && !simEngine.CheckGameEnd())
+            {
+                simEngine.currentPlayer *= -1;
+                validMoves = simEngine.GetValidMoves();
+            }
+
+            if (validMoves.Count == 0) return; 
             
             // Mask and normalize policy
             float sumPsa = 0;
@@ -159,11 +186,10 @@ namespace CongklakAI
                 float psa = (sumPsa > 0) ? piVector[move] / sumPsa : 1.0f / validMoves.Count;
                 
                 // Simulate move to create child state
-                simEngine.InitializeBoard(7); // Reset temp to reuse logic
                 Array.Copy(node.board, simEngine.board, 16);
                 simEngine.currentPlayer = node.player;
                 
-                simEngine.PlayAction(move);
+                foreach (var _ in simEngine.PlayAction(move)) { } // Execute instantly
                 
                 node.AddChild(
                     simEngine.board, 
@@ -179,23 +205,27 @@ namespace CongklakAI
         private void Backpropagate(MCTSNode node, float v)
         {
             MCTSNode curr = node;
-            while (curr != null)
+            // Stop before root, matching Python: 'while node != self.root'
+            while (curr != null && curr != root)
             {
-                curr.nsa++;
-                curr.wsa += v;
-                curr.qsa = curr.wsa / curr.nsa;
-                
-                // Flip value perspective if parent player is different
+                // Flip perspective if parent player changed (handles extra turns correctly)
                 if (curr.parent != null && curr.parent.player != curr.player)
                 {
                     v = -v;
                 }
+
+                curr.nsa++;
+                curr.wsa += v;
+                curr.qsa = curr.wsa / curr.nsa;
+                
                 curr = curr.parent;
             }
         }
 
         private int DecideMove(int turnCount)
         {
+            if (root.children.Count == 0) return -1;
+
             if (turnCount > openingLimit)
             {
                 // Deterministic: Max visits
@@ -230,19 +260,23 @@ namespace CongklakAI
         {
             float[,,] states = new float[3, 2, 8];
             
-            // Canonical indices for Row 0 (Current Player) and Row 1 (Opponent)
-            int[] mySide = (currentPlayer == 1) ? Enumerable.Range(0, 8).ToArray() : Enumerable.Range(8, 8).ToArray();
-            int[] opSide = (currentPlayer == 1) ? Enumerable.Range(8, 8).ToArray() : Enumerable.Range(0, 8).ToArray();
+            // Sync with Python: P1 = 1.0, P2 = 0.0
+            float turnIndicator = (currentPlayer == 1) ? 1.0f : 0.0f;
 
-            for (int j = 0; j < 8; j++)
-                states[0, 0, j] = board[mySide[j]] / 98.0f;
+            int myOffset = (currentPlayer == 1) ? 0 : 8;
+            int opOffset = (currentPlayer == 1) ? 8 : 0;
 
-            for (int j = 0; j < 8; j++)
-                states[1, 1, j] = board[opSide[j]] / 98.0f;
-
-            for (int i = 0; i < 2; i++)
-                for (int j = 0; j < 8; j++)
-                    states[2, i, j] = 1.0f;
+            for (int j = 0; j < 8; j++) 
+            {
+                // Channel 0: Current player's shells on their canonical row (Row 0)
+                states[0, 0, j] = board[myOffset + j] / 98.0f;
+                
+                // Channel 1: Opponent's shells on their canonical row (Row 1)
+                states[1, 1, j] = board[opOffset + j] / 98.0f;
+                
+                // Channel 2: Perspective/Turn metadata
+                states[2, 0, j] = states[2, 1, j] = turnIndicator;
+            }
 
             return states;
         }

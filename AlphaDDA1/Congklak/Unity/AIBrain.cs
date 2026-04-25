@@ -1,8 +1,7 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using Unity.Sentis;
+
 using System.Linq;
+using Unity.InferenceEngine;
 
 namespace CongklakAI
 {
@@ -10,9 +9,9 @@ namespace CongklakAI
     {
         [Header("Model Settings")]
         [Tooltip("The exported CongklakAlphaDDA.onnx file")]
-        public ModelAsset modelAsset;
+        public Unity.InferenceEngine.ModelAsset modelAsset;
         
-        private IWorker worker;
+        private Worker worker;
         private Model runtimeModel;
 
         void Awake()
@@ -25,7 +24,7 @@ namespace CongklakAI
                 // Create a worker. GPU is preferred for ResNets
                 // Use BackendType.GPUCompute for modern Android/Unity 6
                 // Fallback to CPU if needed
-                worker = WorkerFactory.CreateWorker(BackendType.GPUCompute, runtimeModel);
+                worker = new Worker(runtimeModel, BackendType.GPUCompute);
             }
         }
 
@@ -35,7 +34,7 @@ namespace CongklakAI
         public (float[] pi, float v) Predict(float[,,] state)
         {
             // Input shape is [1, 3, 2, 8]
-            TensorShape shape = new TensorShape(1, 3, 2, 8);
+            TensorShape shape = new(1, 3, 2, 8);
             
             // Flatten 3D array to 1D for Tensor creation
             float[] flatten = new float[1 * 3 * 2 * 8];
@@ -45,26 +44,22 @@ namespace CongklakAI
                     for (int y = 0; y < 8; y++)
                         flatten[idx++] = state[c, x, y];
 
-            using TensorFloat inputTensor = new TensorFloat(shape, flatten);
+            using Tensor<float> inputTensor = new(shape, flatten);
             
             // Execute model
             // Input name MUST match the 'input_names' in Python export: 'input_board'
-            worker.Execute(inputTensor);
+            worker.Schedule(inputTensor);
 
             // Get outputs
             // Names MUST match the 'output_names' in Python export
-            using TensorFloat piTensor = worker.PeekOutput("output_pi") as TensorFloat;
-            using TensorFloat vTensor = worker.PeekOutput("output_v") as TensorFloat;
-
-            // Make tensors readable
-            piTensor.MakeReadable();
-            vTensor.MakeReadable();
+            using Tensor<float> piTensor = worker.PeekOutput("output_pi") as Tensor<float>;
+            using Tensor<float> vTensor = worker.PeekOutput("output_v") as Tensor<float>;
 
             // Policy is log_softmax, so we convert to probabilities: exp(pi)
-            float[] logPi = piTensor.ToReadOnlyArray();
+            float[] logPi = piTensor.DownloadToArray();
             float[] pi = logPi.Select(x => Mathf.Exp(x)).ToArray();
             
-            float v = vTensor.ToReadOnlyArray()[0];
+            float v = vTensor.DownloadToArray()[0];
 
             return (pi, v);
         }
