@@ -6,6 +6,7 @@ import sys
 import numpy as np
 import multiprocessing as mp
 import random
+import csv
 from statistics import mean
 
 from congklak import Congklak
@@ -135,7 +136,22 @@ if __name__ == '__main__':
     print(f"--- Starting Bulk Grid Evaluation (N_MAX={n_max}, Window={n_mean}) ---", flush=True)
     
     # Test against all 4 opponents defined in the paper
-    evaluator.run_bulk_test("alphadda1", "random")
-    evaluator.run_bulk_test("alphadda1", "minimax")
-    evaluator.run_bulk_test("alphadda1", "mcts")
-    evaluator.run_bulk_test("alphadda1", "alphazero")
+    opponents = ["random", "minimax", "mcts", "alphazero"]
+    results_to_save = []
+
+    for opp in opponents:
+        win_rate, avg_margin = evaluator.run_bulk_test("alphadda1", opp)
+        results_to_save.append({
+            "Opponent": opp,
+            "WinRate": f"{win_rate:.1f}%",
+            "AvgMargin": f"{avg_margin:+.2f}"
+        })
+
+    # Save to CSV for thesis reporting
+    csv_file = "alphadda1_eval.csv"
+    with open(csv_file, mode='w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=["Opponent", "WinRate", "AvgMargin"])
+        writer.writeheader()
+        writer.writerows(results_to_save)
+
+    print(f"\n--- Evaluation Complete. Results saved to {csv_file} ---")

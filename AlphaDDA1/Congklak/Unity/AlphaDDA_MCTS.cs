@@ -84,7 +84,7 @@ namespace CongklakAI
             // 1. DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
             // N_sim = ceil(10^(-A * (avg_win_score * player + X0)))
             var (pi_root, v_root) = brain.Predict(GenerateStates(root.board, root.player));
-            float winScore = v_root * root.player; // Relative to current player
+            float winScore = v_root; // v is already canonical (relative to current player)
             float exponent = -A * (winScore + X0);
             exponent = Mathf.Min(exponent, 10f); // Safety clip
             int numSims = Mathf.CeilToInt(Mathf.Pow(10f, exponent));

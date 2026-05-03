@@ -102,8 +102,9 @@ class A_MCTS:
         if len(self.estimated_outcome_queue) > self.max_num_values:
             self.estimated_outcome_queue.pop(0)
             
-        # 3. Calculate average win_score relative to AI player
-        win_score = mean(self.estimated_outcome_queue) * self.root.player
+        # 3. Calculate average win_score relative to the current AI player
+        # Note: v is already canonical (relative to current player), so we don't multiply by player side.
+        win_score = mean(self.estimated_outcome_queue)
         
         # 4. Paper's exact formula: N_sim = ceil(10^(-A * (win_score + X0)))
         # Numerical Safety: Clip the exponent to prevent OverflowError
