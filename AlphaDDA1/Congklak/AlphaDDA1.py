@@ -1,4 +1,8 @@
 #---------------------------------------
+# AlphaDDA1 Implementation for Congklak
+# Based on: Fujita (2022) - PeerJ Computer Science
+# Purpose: Research Evaluation for Thesis
+#---------------------------------------
 # -*- coding: utf-8 -*-
 #---------------------------------------
 import numpy as np
