@@ -31,15 +31,16 @@ class Node():
         self.children.append(child)
 
 class A_MCTS:
-    def __init__(self, game, net = None, params = Parameters(), num_mean = 5, N_MAX = 800, states = None):
+    def __init__(self, game, net = None, params = Parameters(), num_mean = 1, X0 = 0.0, A = 10.0, N_MAX = 300, states = None):
         self.num_moves = None
         self.params = params
         
-        # DDA parameters
+        # DDA parameters — faithfully from PeerJ-CS 1123 (Fujita, 2022)
         self.max_num_values = num_mean
         self.estimated_outcome_queue = []
+        self.A = A
+        self.X0 = X0
         self.N_MAX = N_MAX
-        self.N_MIN = 60 # Minimum simulations to maintain basic tactical awareness
         self.states_history = states if states is not None else []
         
         if net == None:
@@ -85,10 +86,10 @@ class A_MCTS:
     def Update_DDA_Simulations(self):
         """
         Implements AlphaDDA1: Adjusting playing strength based on the predicted game outcome.
-        As defined in PeerJ-CS 1123 (Fujita, 2022).
+        Formula: N_sim = 10^(-A * (avg_win_score * player + X0))
+        Directly from PeerJ-CS 1123 (Fujita, 2022), matching the Connect4 reference implementation.
         """
         # 1. Get the current estimated value (v) from the NN
-        # States represent the game history; we use the latest state.
         temp_g = Congklak()
         temp_g.board = deepcopy(self.root.board)
         temp_g.current_player = self.root.player
@@ -101,21 +102,18 @@ class A_MCTS:
         if len(self.estimated_outcome_queue) > self.max_num_values:
             self.estimated_outcome_queue.pop(0)
             
-        # 3. Calculate average win_score (relative to AI player)
-        win_score = mean(self.estimated_outcome_queue)
+        # 3. Calculate average win_score relative to AI player
+        win_score = mean(self.estimated_outcome_queue) * self.root.player
         
-        # 4. Simulation Adjustment Logic:
-        # If AI is winning (win_score > 0), reduce simulations to give the human a chance.
-        # If AI is losing or even (win_score <= 0), use N_MAX.
+        # 4. Paper's exact formula: N_sim = ceil(10^(-A * (win_score + X0)))
+        # Numerical Safety: Clip the exponent to prevent OverflowError
+        exponent = -self.A * (win_score + self.X0)
+        exponent = min(exponent, 10) # 10^10 is plenty large enough before clipping to N_MAX
         
-        if win_score > 0:
-            # Linear reduction: N_sim = N_MAX * (1 - win_score)
-            # We clip it to N_MIN so it doesn't become completely random.
-            reduction_factor = 1.0 - (win_score ** 2) # Using squared for smoother drop
-            new_sims = int(self.N_MAX * reduction_factor)
-            self.params.num_mcts_sims = max(self.N_MIN, new_sims)
-        else:
-            self.params.num_mcts_sims = self.N_MAX
+        new_sims = math.ceil(10 ** exponent)
+        
+        # 5. Clip to [1, N_MAX]
+        self.params.num_mcts_sims = max(1, min(new_sims, self.N_MAX))
             
         print(f"AlphaDDA1: v={v:.3f}, avg_v={win_score:.3f} -> Sims: {self.params.num_mcts_sims}")
 

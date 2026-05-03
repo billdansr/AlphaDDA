@@ -57,19 +57,20 @@ namespace CongklakAI
         private float temp = 1.0f;
         private int openingLimit = 0; // opening_test = 0
 
-        // DDA parameters
-        private int N_MAX = 800;
-        private int N_MIN = 60;
-        private float A = 1.0f;
+        // DDA parameters — faithfully from PeerJ-CS 1123 (Fujita, 2022)
+        private int N_MAX = 300;
+        private float A = 10.0f;
         private float X0 = 0.0f;
+        private int numMean = 1;
 
-        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 1.0f, float X0 = 0.0f, int N_MAX = 300)
+        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 10.0f, float X0 = 0.0f, int N_MAX = 300, int numMean = 1)
         {
             this.root = new MCTSNode(game.board, game.currentPlayer);
             this.brain = brain;
             this.A = A;
             this.X0 = X0;
             this.N_MAX = N_MAX;
+            this.numMean = numMean;
         }
 
         /// <summary>
@@ -80,22 +81,15 @@ namespace CongklakAI
             if (onComplete == null) yield break;
 
             // 1. Calculate Dynamic Simulations
-            // 1. DDA: Adjust simulations based on AI confidence
-            // Sync with Python AlphaDDA1.py: squared reduction formula
+            // 1. DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
+            // N_sim = ceil(10^(-A * (avg_win_score * player + X0)))
             var (pi_root, v_root) = brain.Predict(GenerateStates(root.board, root.player));
-            float winScore = v_root;
-            int numSims;
-            if (winScore > 0)
-            {
-                // Reduce simulations when AI is winning (smoother squared reduction)
-                float reductionFactor = 1.0f - (winScore * winScore);
-                numSims = Mathf.Max(N_MIN, (int)(N_MAX * reductionFactor));
-            }
-            else
-            {
-                numSims = N_MAX;
-            }
-            Debug.Log($"[AlphaDDA] v={winScore:F3} -> Sims: {numSims}");
+            float winScore = v_root * root.player; // Relative to current player
+            float exponent = -A * (winScore + X0);
+            exponent = Mathf.Min(exponent, 10f); // Safety clip
+            int numSims = Mathf.CeilToInt(Mathf.Pow(10f, exponent));
+            numSims = Mathf.Clamp(numSims, 1, N_MAX);
+            Debug.Log($"[AlphaDDA] v={v_root:F3}, adj_v={winScore:F3} -> Sims: {numSims}");
 
             // 2. MCTS Logic
             for (int i = 0; i < numSims; i++)
