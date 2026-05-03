@@ -33,9 +33,9 @@ class GridEvaluator():
     def play_single_game(self, args):
         """
         Worker function for multiprocessing.
-        args: (p1_type, p2_type, device)
+        args: (p1_type, p2_type, device, custom_A, custom_X0)
         """
-        p1_type, p2_type, device = args
+        p1_type, p2_type, device, custom_A, custom_X0 = args
         
         # Local net initialization for the process
         params = Parameters()
@@ -64,8 +64,10 @@ class GridEvaluator():
                 az.num_moves = turn
                 move = az.Run()
             elif current_player_type == "alphadda1":
-                # Paper defaults: A=1000, X0=0.0, num_mean=1, N_MAX=300
-                adda = AlphaDDA1MCTS(game=g, net=net, params=params, num_mean=self.num_mean, A=10.0, X0=0.0, N_MAX=self.N_MAX)
+                # Use custom A and X0 if provided, else use defaults
+                a_val = custom_A if custom_A is not None else 10.0
+                x0_val = custom_X0 if custom_X0 is not None else 0.0
+                adda = AlphaDDA1MCTS(game=g, net=net, params=params, num_mean=self.num_mean, A=a_val, X0=x0_val, N_MAX=self.N_MAX)
                 adda.num_moves = turn
                 move = adda.Run()
             
@@ -86,8 +88,8 @@ class GridEvaluator():
         device = "cuda:0" if net_has_cuda() else "cpu"
         
         for _ in range(self.num_games):
-            schedule.append((target_ai, opponent_type, device)) # target is P1
-            schedule.append((opponent_type, target_ai, device)) # target is P2
+            schedule.append((target_ai, opponent_type, device, None, None)) # target is P1
+            schedule.append((opponent_type, target_ai, device, None, None)) # target is P2
 
         # Execute in parallel
         with mp.Pool(processes=num_cores) as pool:
@@ -112,6 +114,31 @@ class GridEvaluator():
         win_rate = (ai_wins / total_games) * 100
         avg_margin = sum(ai_margins) / len(ai_margins)
         
+        print(f"RESULT | WinRate: {win_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
+        return win_rate, avg_margin
+
+    def run_bulk_test_custom(self, target_ai, opponent_type, a_val, x0_val):
+        """ Specialized version for Grid Search with custom A and X0 """
+        schedule = []
+        num_cores = mp.cpu_count()
+        device = "cuda:0" if net_has_cuda() else "cpu"
+        
+        for _ in range(self.num_games):
+            schedule.append((target_ai, opponent_type, device, a_val, x0_val)) # target is P1
+            schedule.append((opponent_type, target_ai, device, a_val, x0_val)) # target is P2
+
+        with mp.Pool(processes=num_cores) as pool:
+            results = pool.map(self.play_single_game, schedule)
+
+        ai_wins = 0
+        ai_margins = []
+        for i, (winner, p1_s, p2_s) in enumerate(results):
+            if i % 2 == 0: ai_side = self.params.p1; ai_margins.append(p1_s - p2_s)
+            else: ai_side = self.params.p2; ai_margins.append(p2_s - p1_s)
+            if winner == ai_side: ai_wins += 1
+
+        win_rate = (ai_wins / len(results)) * 100
+        avg_margin = sum(ai_margins) / len(ai_margins)
         print(f"RESULT | WinRate: {win_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
         return win_rate, avg_margin
 
