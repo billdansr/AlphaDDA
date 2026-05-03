@@ -14,45 +14,56 @@ if __name__ == '__main__':
     
     fixed_window = 1
     fixed_n_max = 300
-    target_opponent = "minimax" # Fokus menyeimbangkan melawan Minimax
+    target_opponent = "minimax"
     
+    # 1. Muat hasil yang sudah ada jika ada (Resume Capability)
+    results_to_save = []
+    csv_file = "grid_search_fujita.csv"
+    existing_configs = set()
+    
+    if os.path.exists(csv_file):
+        with open(csv_file, mode='r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                results_to_save.append(row)
+                existing_configs.add((float(row['A_sim']), float(row['X0'])))
+        print(f"--- Resuming Grid Search: {len(existing_configs)} combinations already done ---")
+
     # Setup Multiprocessing
     try:
         mp.set_start_method('spawn', force=True)
     except RuntimeError:
         pass
 
-    results_to_save = []
-    csv_file = "grid_search_fujita.csv"
-
     print(f"--- Starting Fujita Grid Search ($A_{{sim}}$ vs $X_0$) ---")
     print(f"Fixed Params: Window={fixed_window}, $N_{{max}}$={fixed_n_max}")
-    print(f"Goal: Find WinRate closest to 50%\n")
+    
+    # Gunakan standar paper: 50 P1 + 50 P2 = 100 total per combo
+    evaluator = GridEvaluator(num_mean=fixed_window, N_MAX=fixed_n_max)
+    evaluator.num_games = 50
 
     for a_sim in a_sim_list:
         for x0 in x0_list:
+            if (a_sim, x0) in existing_configs:
+                continue
+                
             print(f"Testing: $A_{{sim}}$={a_sim}, $X_0$={x0}...", end=" ", flush=True)
-            
-            # Kita buat evaluator dengan window dan n_max tetap
-            evaluator = GridEvaluator(num_mean=fixed_window, N_MAX=fixed_n_max)
-            
-            # Modifikasi: Kita perlu test_dda menggunakan a_sim dan x0 yang sedang diuji
-            # Kita akan mengupdate fungsi run_bulk_test untuk menerima a_sim dan x0
             win_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", target_opponent, a_sim, x0)
             
-            results_to_save.append({
+            new_result = {
                 "A_sim": a_sim,
                 "X0": x0,
                 "WinRate": win_rate,
                 "AvgMargin": avg_margin,
                 "DiffFrom50": abs(50.0 - win_rate)
-            })
+            }
+            results_to_save.append(new_result)
 
-    # Simpan hasil ke CSV
-    with open(csv_file, mode='w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=["A_sim", "X0", "WinRate", "AvgMargin", "DiffFrom50"])
-        writer.writeheader()
-        writer.writerows(results_to_save)
+            # Simpan setiap iterasi (Auto-save)
+            with open(csv_file, mode='w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=["A_sim", "X0", "WinRate", "AvgMargin", "DiffFrom50"])
+                writer.writeheader()
+                writer.writerows(results_to_save)
 
     # Tentukan pemenang
     best_config = min(results_to_save, key=lambda x: x['DiffFrom50'])
