@@ -14,11 +14,15 @@ if __name__ == '__main__':
     
     fixed_window = 1
     fixed_n_max = 300
-    target_opponent = "minimax"
-    
-    # 1. Muat hasil yang sudah ada jika ada (Resume Capability)
-    results_to_save = []
+    # Google Colab Integration: Set up persistent storage
     csv_file = "grid_search_fujita.csv"
+    if os.path.exists('/content'):
+        drive_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+        if os.path.exists(drive_path):
+            os.chdir(drive_path)
+            print(f"Colab detected. Results will be saved to Drive: {drive_path}")
+
+    # 1. Muat hasil yang sudah ada jika ada (Resume Capability)
     existing_configs = set()
     
     if os.path.exists(csv_file):
