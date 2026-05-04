@@ -33,7 +33,7 @@ class Parameters:
         self.num_mcts_sims      = 800                
         self.num_mcts_sims_test = 400
         self.cpuct              = 1.25               
-        self.opening_train      = 4                  
+        self.opening_train      = 10 # Increased for better exploration
         self.opening_test       = 0                  
         self.opening            = self.opening_train 
         self.Temp               = 1.0                
@@ -41,7 +41,7 @@ class Parameters:
         self.dirichlet_eps      = 0.25
 
         # Neural Network architecture
-        self.input_size     = 20000                   
+        self.input_size     = 100000 # Increased memory for more stable learning
         self.k_boards       = 1                       
         self.input_channels = (self.k_boards * 2) + 1 
         self.num_filters    = 256                     
@@ -50,6 +50,6 @@ class Parameters:
         self.num_res        = 10                       
         self.epochs         = 10                      
         self.batch_size     = 128                     
-        self.lam            = 1e-3                    
+        self.lam            = 0.0002 # Lowered LR for fine-tuning plateau
         self.weight_decay   = 1e-4                    
         self.momentum       = 0.9                     
