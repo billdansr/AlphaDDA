@@ -23,6 +23,7 @@ namespace CongklakAI
 
         [Header("Visual Tuning")]
         public float holeRadius = 0.15f; // Radius penyebaran biji di dalam lubang
+        public float storeRadius = 0.35f; // Radius lebih luas khusus untuk lumbung (Store)
         public bool useRandomRotation = true;
 
         [Header("UI Offset Settings")]
@@ -555,10 +556,13 @@ namespace CongklakAI
             int targetCount = game.board[holeIdx];
             List<GameObject> currentShells = holeShells[holeIdx];
 
+            // Gunakan radius yang berbeda jika ini adalah Store (Lumbung)
+            float r = (holeIdx == 7 || holeIdx == 15) ? storeRadius : holeRadius;
+
             // Tambah shell jika kurang
             while (currentShells.Count < targetCount)
             {
-                Vector3 randomOffset = (Vector3)(Random.insideUnitCircle * holeRadius);
+                Vector3 randomOffset = (Vector3)(Random.insideUnitCircle * r);
                 Vector3 spawnPos = holeTransforms[holeIdx].position + randomOffset;
                 spawnPos.z = -0.1f; // Sedikit di depan sprite lubang
 
