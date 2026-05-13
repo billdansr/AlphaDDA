@@ -16,7 +16,7 @@ namespace CongklakAI
         public bool isP2Human = false;
         
         [Header("Difficulty Parameters")]
-        public float sensitivityA = 1.0f;
+        public float sensitivityA = 10.0f; // Default disamakan dengan AlphaDDA1.py
         public float offsetX0 = 0.0f;
         public int maxSims = 300;
         public float stepDelay = 0.2f; // Time between shell drops
@@ -24,6 +24,10 @@ namespace CongklakAI
         [Header("Visual Tuning")]
         public float holeRadius = 0.15f; // Radius penyebaran biji di dalam lubang
         public bool useRandomRotation = true;
+
+        [Header("UI Offset Settings")]
+        public float uiVerticalOffset = 1.2f;   // Jarak atas/bawah
+        public float uiHorizontalOffset = 1.5f; // Jarak kiri/kanan
 
         [Header("Animation Settings")]
         public GameObject shellPrefab;   // Assign a small shell/circle prefab
@@ -98,11 +102,25 @@ namespace CongklakAI
 
         void Update()
         {
+            // Fallback jika kamera belum ter-assign (misal saat ganti scene)
+            if (mainCamera == null) mainCamera = Camera.main;
+
+            // Selalu sinkronkan posisi teks UI dengan posisi lubang
+            AlignUIToWorld();
+
+            if (mainCamera == null || !isInteracting) return;
+
             // Detect clicks on World Space Sprites using the New Input System
-            if (isInteracting && Pointer.current != null && Pointer.current.press.wasPressedThisFrame)
+            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame)
             {
-                Vector2 mousePosition = Pointer.current.position.ReadValue();
-                Vector2 worldPosition = mainCamera.ScreenToWorldPoint(mousePosition);
+                Vector3 mousePos = Pointer.current.position.ReadValue();
+
+                // Hitung jarak Z dari kamera ke bidang papan (Z=0).
+                // Ini membuat kode bekerja baik di mode Perspective maupun Orthographic.
+                float zDist = Mathf.Abs(mainCamera.transform.position.z);
+                Vector3 worldPos3D = mainCamera.ScreenToWorldPoint(new Vector3(mousePos.x, mousePos.y, zDist));
+                Vector2 worldPosition = new Vector2(worldPos3D.x, worldPos3D.y);
+
                 Collider2D hit = Physics2D.OverlapPoint(worldPosition);
 
                 if (hit != null)
@@ -208,12 +226,29 @@ namespace CongklakAI
             }
 
             GameObject handShell = null;
-            // Z-Offset agar shell muncul di depan papan (misal: Z papan adalah 0, maka Z shell -1)
             float zOffset = -0.5f; 
             int lastHoleIdx = -1;
             int storeIdx = (game.currentPlayer == 1) ? 7 : 15;
             int lastStoreCount = game.board[storeIdx];
 
+            // 1. Initial Pickup: Ambil dari lubang awal (Start Hole)
+            int startHole = (game.currentPlayer == 1) ? move : move + 8;
+            int initialShells = game.board[startHole];
+
+            handShell = new GameObject("HandGroup");
+            handShell.transform.position = holeTransforms[startHole].position;
+
+            if (handShellCounterText != null)
+            {
+                handShellCounterText.text = initialShells.ToString();
+                handShellCounterText.gameObject.SetActive(true);
+            }
+
+            yield return StartCoroutine(AnimatePickup(startHole, handShell, true));
+            // HAPUS: UpdateAllHoleVisuals() di sini menyebabkan biji muncul lagi karena 
+            // engine belum dipanggil (board[startHole] masih berisi).
+
+            // 2. Main Loop: Distribusi Bidak
             foreach (var (holeIdx, remainingShells) in game.PlayAction(move))
             {
                 if (holeTransforms == null || holeIdx >= holeTransforms.Length || holeTransforms[holeIdx] == null)
@@ -225,95 +260,69 @@ namespace CongklakAI
                 // Deteksi Aksi Spesial: Jalan Terus (Pick up) atau Capture (Tembak)
                 if (holeIdx == lastHoleIdx && game.board[holeIdx] == 0)
                 {
-                    // Jika jumlah biji di lumbung (store) bertambah, berarti engine melakukan Capture
-                    // Karena biji yang jatuh di lumbung secara normal tidak memicu yield ganda.
                     if (game.board[storeIdx] > lastStoreCount)
                     {
                         yield return StartCoroutine(AnimateCapture(holeIdx, handShell));
-                        handShell = null; // Shell di tangan sudah masuk ke store
-                        if (handShellCounterText != null)
-                        {
-                            handShellCounterText.gameObject.SetActive(false); // Hide counter after capture
-                        }
+                        handShell = null;
+                        if (handShellCounterText != null) handShellCounterText.gameObject.SetActive(false);
                     }
                     else
                     {
-                        // Jalan Terus: Ambil semua biji di lubang ini ke arah tangan
+                        yield return StartCoroutine(AnimatePickup(holeIdx, handShell, false));
+                        UpdateAllHoleVisuals();
+                        UpdateUI();
+                        
+                        // Update Hand Text SETELAH ambil biji (Jalan Terus)
                         if (handShellCounterText != null)
                         {
                             handShellCounterText.text = remainingShells.ToString();
                         }
-                        
-                        yield return StartCoroutine(AnimatePickup(holeIdx, handShell, false));
-                        
-                        // Segera update papan agar lubang yang baru diambil terlihat kosong (0)
-                        UpdateAllHoleVisuals();
-                        UpdateUI();
                     }
 
                     lastStoreCount = game.board[storeIdx];
                     continue;
                 }
-
                 Vector3 targetPos = holeTransforms[holeIdx].position;
-                targetPos.z += zOffset; // Berikan offset agar tidak tumpang tindih secara Z
+                targetPos.z += zOffset;
+                
+                Vector3 startPos = handShell.transform.position;
+                float distance = Vector3.Distance(startPos, targetPos);
+                float duration = distance / shellMoveSpeed;
+                float elapsed = 0;
 
-                if (handShell == null)
+                while (elapsed < duration)
                 {
-                    // Inisialisasi tangan sebagai wadah kosong (Container)
-                    handShell = new GameObject("HandGroup");
-                    handShell.transform.position = targetPos;
-
-                    if (handShellCounterText != null)
-                    {
-                        handShellCounterText.text = remainingShells.ToString();
-                        handShellCounterText.gameObject.SetActive(true);
-                    }
-                    // Animasi ambil biji dari lubang awal ke arah tangan
-                    yield return StartCoroutine(AnimatePickup(holeIdx, handShell, true));
-
-                    // Sinkronisasi visual lubang agar langsung terlihat kosong saat diambil
-                    UpdateAllHoleVisuals();
-                    UpdateUI();
+                    handShell.transform.position = Vector3.Lerp(startPos, targetPos, elapsed / duration);
+                    elapsed += Time.deltaTime;
+                    yield return null;
                 }
-                else
+                handShell.transform.position = targetPos;
+
+                // Sinkronisasi Visual Drop: Kurangi prefab di tangan agar sesuai data engine
+                if (handShell.transform.childCount > remainingShells)
                 {
-                    if (handShellCounterText != null)
+                    int toDestroy = handShell.transform.childCount - remainingShells;
+                    for (int i = 0; i < toDestroy; i++)
                     {
-                        handShellCounterText.text = remainingShells.ToString();
-                    }
-                    // Move the shell from the previous hole to the current one
-                    Vector3 startPos = handShell.transform.position;
-                    float distance = Vector3.Distance(startPos, targetPos);
-                    float duration = distance / shellMoveSpeed;
-                    float elapsed = 0;
-
-                    while (elapsed < duration)
-                    {
-                        handShell.transform.position = Vector3.Lerp(startPos, targetPos, elapsed / duration);
-                        elapsed += Time.deltaTime;
-                        yield return null;
-                    }
-                    handShell.transform.position = targetPos;
-
-                    // Visual drop: Hapus biji dari tangan agar sesuai dengan jumlah di engine
-                    if (handShell.transform.childCount > remainingShells)
-                    {
-                        int toDestroy = handShell.transform.childCount - remainingShells;
-                        for (int i = 0; i < toDestroy; i++) 
+                        if (handShell.transform.childCount > 0)
                             Destroy(handShell.transform.GetChild(0).gameObject);
                     }
-                    
-                    // Mainkan suara klik saat biji sampai di lubang
-                    if (audioSource != null && dropSound != null)
-                        audioSource.PlayOneShot(dropSound);
+                }
+                
+                if (audioSource != null && dropSound != null)
+                    audioSource.PlayOneShot(dropSound);
 
-                    // Update visual setelah shell "jatuh" ke lubang
-                    UpdateAllHoleVisuals();
+                UpdateAllHoleVisuals();
+                UpdateUI();
+
+                // Update Hand Text SETELAH sinkronisasi papan agar sinkron secara visual
+                if (handShellCounterText != null)
+                {
+                    handShellCounterText.text = remainingShells.ToString();
                 }
 
-                UpdateUI();
                 yield return new WaitForSeconds(stepDelay);
+
                 lastHoleIdx = holeIdx;
                 lastStoreCount = game.board[storeIdx];
             }
@@ -337,11 +346,24 @@ namespace CongklakAI
             int storeIdx = (game.currentPlayer == 1) ? 7 : 15;
             Transform handTarget = (game.currentPlayer == 1) ? p1HandTarget : p2HandTarget;
 
-            // 1. Ambil semua shell yang ada di lubang lawan (opposite)
-            List<GameObject> capturedObjects = new List<GameObject>(holeShells[oppositeIdx]);
-            holeShells[oppositeIdx].Clear();
+            // 1. Ambil semua shell yang akan dipindahkan ke lumbung
+            List<GameObject> capturedObjects = new List<GameObject>();
+
+            // Ambil dari lubang lawan (opposite)
+            if (holeShells[oppositeIdx].Count > 0)
+            {
+                capturedObjects.AddRange(holeShells[oppositeIdx]);
+                holeShells[oppositeIdx].Clear();
+            }
+
+            // Ambil dari lubang sendiri (yang baru saja diisi)
+            if (holeShells[landingHoleIdx].Count > 0)
+            {
+                capturedObjects.AddRange(holeShells[landingHoleIdx]);
+                holeShells[landingHoleIdx].Clear();
+            }
             
-            // Tambahkan shell yang baru saja jatuh (yang memicu capture)
+            // Tambahkan shell sisa dari visual tangan (jika ada)
             if (lastDroppedShell != null)
             {
                 foreach (Transform child in lastDroppedShell.transform)
@@ -453,8 +475,8 @@ namespace CongklakAI
             {
                 obj.transform.SetParent(currentHandShell.transform);
                 
-                // Berikan posisi acak lokal agar terlihat seperti tumpukan di tangan
-                obj.transform.localPosition = (Vector3)(Random.insideUnitCircle * 0.2f);
+                // Berikan posisi acak lokal yang sangat kecil agar terlihat saling menyentuh di tangan
+                obj.transform.localPosition = (Vector3)(Random.insideUnitCircle * 0.05f);
                 obj.transform.localScale = shellBaseScale;
 
                 // Pastikan biji di tangan berada paling depan secara visual
@@ -471,14 +493,27 @@ namespace CongklakAI
         {
             if (holeTexts == null || holeTransforms == null || holeTexts.Length != 16 || holeTransforms.Length != 16)
             {
-                Debug.LogWarning("AlignUI failed: Ensure both holeTexts and holeTransforms arrays have 16 elements assigned.");
                 return;
             }
 
             for (int i = 0; i < 16; i++)
             {
                 if (holeTexts[i] != null && holeTransforms[i] != null)
-                    holeTexts[i].transform.position = mainCamera.WorldToScreenPoint(holeTransforms[i].position);
+                {
+                    Vector3 worldPos = holeTransforms[i].position;
+
+                    // Terapkan Offset berdasarkan posisi lubang agar tidak menutupi biji (kewuk)
+                    if (i >= 0 && i <= 6) // Lubang Bawah (P1)
+                        worldPos += Vector3.down * uiVerticalOffset;
+                    else if (i == 7) // Store P1
+                        worldPos += Vector3.left * uiHorizontalOffset;
+                    else if (i >= 8 && i <= 14) // Lubang Atas (P2)
+                        worldPos += Vector3.up * uiVerticalOffset;
+                    else if (i == 15) // Store P2
+                        worldPos += Vector3.right * uiHorizontalOffset;
+
+                    holeTexts[i].transform.position = mainCamera.WorldToScreenPoint(worldPos);
+                }
             }
         }
 
