@@ -62,6 +62,9 @@ namespace CongklakAI
         private float A = 10.0f;
         private float X0 = 0.0f;
         private int numMean = 1;
+        
+        // Static queue to persist win scores across turns (for numMean > 1)
+        private static Queue<float> winScoreQueue = new Queue<float>();
 
         public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 10.0f, float X0 = 0.0f, int N_MAX = 300, int numMean = 1)
         {
@@ -71,6 +74,14 @@ namespace CongklakAI
             this.X0 = X0;
             this.N_MAX = N_MAX;
             this.numMean = numMean;
+            
+            // Note: We don't clear the queue here to allow cross-turn persistence.
+            // If starting a brand new game, call ResetDDA()
+        }
+
+        public static void ResetDDA()
+        {
+            winScoreQueue.Clear();
         }
 
         /// <summary>
@@ -82,14 +93,19 @@ namespace CongklakAI
 
             // 1. Calculate Dynamic Simulations
             // 1. DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
-            // N_sim = ceil(10^(-A * (avg_win_score * player + X0)))
             var (pi_root, v_root) = brain.Predict(GenerateStates(root.board, root.player));
-            float winScore = v_root; // v is already canonical (relative to current player)
-            float exponent = -A * (winScore + X0);
+            
+            // Add to moving average queue
+            winScoreQueue.Enqueue(v_root);
+            while (winScoreQueue.Count > numMean) winScoreQueue.Dequeue();
+            
+            float winScore = winScoreQueue.Average(); 
+            // Tambahkan offset agar saat v=0, sims = N_MAX / 2
+            float exponent = -A * (winScore + X0) + Mathf.Log10(N_MAX / 2.0f);
             exponent = Mathf.Min(exponent, 10f); // Safety clip
             int numSims = Mathf.CeilToInt(Mathf.Pow(10f, exponent));
             numSims = Mathf.Clamp(numSims, 1, N_MAX);
-            Debug.Log($"[AlphaDDA] v={v_root:F3}, adj_v={winScore:F3} -> Sims: {numSims}");
+            Debug.Log($"[AlphaDDA] v_raw={v_root:F3}, v_avg={winScore:F3} -> Sims: {numSims}");
 
             // 2. MCTS Logic
             for (int i = 0; i < numSims; i++)
@@ -254,12 +270,11 @@ namespace CongklakAI
         {
             float[,,] states = new float[3, 2, 8];
             
-            // Sync with Python: P1 = 1.0, P2 = 0.0
-            float turnIndicator = (currentPlayer == 1) ? 1.0f : 0.0f;
-
             int myOffset = (currentPlayer == 1) ? 0 : 8;
             int opOffset = (currentPlayer == 1) ? 8 : 0;
 
+            // Sync with Python: The state is already canonicalized, so the turn 
+            // channel (Channel 2) is always 1.0 (indicating 'current player').
             for (int j = 0; j < 8; j++) 
             {
                 // Channel 0: Current player's shells on their canonical row (Row 0)
@@ -268,8 +283,8 @@ namespace CongklakAI
                 // Channel 1: Opponent's shells on their canonical row (Row 1)
                 states[1, 1, j] = board[opOffset + j] / 98.0f;
                 
-                // Channel 2: Perspective/Turn metadata
-                states[2, 0, j] = states[2, 1, j] = turnIndicator;
+                // Channel 2: Perspective/Turn metadata (Always 1.0 for canonical)
+                states[2, 0, j] = states[2, 1, j] = 1.0f;
             }
 
             return states;
