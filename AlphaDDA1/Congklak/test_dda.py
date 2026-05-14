@@ -21,11 +21,12 @@ from AlphaDDA1 import A_MCTS as AlphaDDA1MCTS
 from minimax import Minimax
 
 class GridEvaluator():
-    def __init__(self, num_mean=5, N_MAX=800):
+    def __init__(self, num_mean=5, N_MAX=800, model_path="checkpoint.model"):
         self.params = Parameters()
         self.num_mean = num_mean
         self.N_MAX = N_MAX
         self.num_games = 50 # Games per pairing per side (Total 100) — matches paper's protocol
+        self.model_path = model_path
         
         # We initialize the net but we will reload it in each process for safety
         self.net = None 
@@ -40,7 +41,18 @@ class GridEvaluator():
         # Local net initialization for the process
         params = Parameters()
         net = NNetWrapper(params=params, device=device)
-        net.load_checkpoint()
+        
+        # Load from absolute path if provided
+        if os.path.exists(self.model_path):
+            import torch
+            checkpoint = torch.load(self.model_path, map_location='cpu', weights_only=True)
+            if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                net.net.load_state_dict(checkpoint['state_dict'])
+            else:
+                net.net.load_state_dict(checkpoint)
+            net.net.eval()
+        else:
+            net.load_checkpoint()
         
         g = Congklak()
         g.Ini_board()

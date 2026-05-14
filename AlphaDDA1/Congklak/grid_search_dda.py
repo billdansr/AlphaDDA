@@ -16,14 +16,15 @@ if __name__ == '__main__':
     fixed_n_max = 300
     target_opponent = "minimax"
     
-    # 1. Muat hasil yang sudah ada jika ada (Resume Capability)
+    # 1. Setup Absolute Paths (Crucial for multiprocessing in Colab)
+    base_path = "./"
+    if os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
+        base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+        print(f"Colab detected. Using absolute path: {base_path}")
+
+    csv_file = os.path.join(base_path, "grid_search_fujita.csv")
+    model_path = os.path.join(base_path, "checkpoint.model")
     results_to_save = []
-    csv_file = "grid_search_fujita.csv"
-    if os.path.exists('/content'):
-        drive_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
-        if os.path.exists(drive_path):
-            os.chdir(drive_path)
-            print(f"Colab detected. Results will be saved to Drive: {drive_path}")
 
     # 1. Muat hasil yang sudah ada jika ada (Resume Capability)
     existing_configs = set()
@@ -46,7 +47,7 @@ if __name__ == '__main__':
     print(f"Fixed Params: Window={fixed_window}, $N_{{max}}$={fixed_n_max}")
     
     # Gunakan standar paper: 50 P1 + 50 P2 = 100 total per combo
-    evaluator = GridEvaluator(num_mean=fixed_window, N_MAX=fixed_n_max)
+    evaluator = GridEvaluator(num_mean=fixed_window, N_MAX=fixed_n_max, model_path=model_path)
     evaluator.num_games = 50
 
     for a_sim in a_sim_list:
