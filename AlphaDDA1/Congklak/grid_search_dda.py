@@ -8,10 +8,10 @@ import multiprocessing as mp
 from test_dda import GridEvaluator
 
 if __name__ == '__main__':
-    # Konfigurasi Grid: Disesuaikan untuk Bias Awal Congklak (v=0.89)
-    # X0 digeser ke negatif agar AI bisa mendapatkan simulasi > 1 di awal game
-    a_sim_list = [0.5, 1.0, 2.0]
-    x0_list = [-1.5, -1.25, -1.0, -0.75, -0.5]
+    # Konfigurasi Grid: Pergeseran Drastis untuk menyeimbangkan Bias Congklak
+    # Perhitungan: A=1.0, X0=-2.5 memberikan ~40 sims di awal dan 300 sims saat v=0
+    a_sim_list = [1.0, 1.5, 2.0]
+    x0_list = [-2.5, -2.25, -2.0, -1.75]
     
     fixed_window = 1
     fixed_n_max = 300
