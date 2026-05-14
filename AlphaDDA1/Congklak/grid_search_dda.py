@@ -8,13 +8,14 @@ import multiprocessing as mp
 from test_dda import GridEvaluator
 
 if __name__ == '__main__':
-    # Konfigurasi Grid sesuai metodologi Fujita (AlphaDDA1)
-    a_sim_list = [2.0, 4.0, 8.0, 16.0]
+    # Konfigurasi Grid: Hand-tuned untuk Congklak agar tidak terlalu agresif
+    # Menggunakan rentang A yang lebih kecil agar simulasi tidak langsung anjlok ke 1
+    a_sim_list = [0.1, 0.5, 1.0, 2.0]
     x0_list = [-0.5, -0.25, 0.0, 0.25, 0.5]
     
     fixed_window = 1
     fixed_n_max = 300
-    target_opponent = "minimax"
+    target_opponent = "alphazero" # Sesuai protokol Connect4 Fujita
     
     # 1. Setup Absolute Paths (Crucial for multiprocessing in Colab)
     base_path = "./"
