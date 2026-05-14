@@ -9,7 +9,7 @@ from test_dda import GridEvaluator
 
 if __name__ == '__main__':
     # Konfigurasi Grid sesuai metodologi Fujita (AlphaDDA1)
-    a_sim_list = [5.0, 10.0, 15.0, 20.0]
+    a_sim_list = [2.0, 4.0, 8.0, 16.0]
     x0_list = [-0.5, -0.25, 0.0, 0.25, 0.5]
     
     fixed_window = 1
