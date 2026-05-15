@@ -76,9 +76,9 @@ class GridEvaluator():
                 az.num_moves = turn
                 move = az.Run()
             elif current_player_type == "alphadda1":
-                # Use custom A and X0 if provided, else use defaults
-                a_val = custom_A if custom_A is not None else 10.0
-                x0_val = custom_X0 if custom_X0 is not None else 0.0
+                # Use custom A and X0 if provided, else use defaults (Optimal for Congklak: A=1.0, X0=-2.0)
+                a_val = custom_A if custom_A is not None else 1.0
+                x0_val = custom_X0 if custom_X0 is not None else -2.0
                 adda = AlphaDDA1MCTS(game=g, net=net, params=params, num_mean=self.num_mean, A=a_val, X0=x0_val, N_MAX=self.N_MAX)
                 adda.num_moves = turn
                 move = adda.Run()
