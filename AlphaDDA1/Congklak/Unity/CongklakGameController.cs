@@ -33,6 +33,7 @@ namespace CongklakAI
         [Header("Animation Settings")]
         public GameObject shellPrefab;   // Assign a small shell/circle prefab
         public float shellMoveSpeed = 15f; // Speed of the shell moving between holes
+        public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
         public Transform p1HandTarget;    // Titik di dekat area bawah (P1)
         public Transform p2HandTarget;    // Titik di dekat area atas (P2)
 
@@ -246,8 +247,7 @@ namespace CongklakAI
             }
 
             yield return StartCoroutine(AnimatePickup(startHole, handShell, true));
-            // HAPUS: UpdateAllHoleVisuals() di sini menyebabkan biji muncul lagi karena 
-            // engine belum dipanggil (board[startHole] masih berisi).
+            bool isFirstDropAfterPickup = true; // Flag untuk gerakan pertama
 
             // 2. Main Loop: Distribusi Bidak
             foreach (var (holeIdx, remainingShells) in game.PlayAction(move))
@@ -270,6 +270,7 @@ namespace CongklakAI
                     else
                     {
                         yield return StartCoroutine(AnimatePickup(holeIdx, handShell, false));
+                        isFirstDropAfterPickup = true; // Set ulang flag karena baru saja ambil biji lagi
                         UpdateAllHoleVisuals();
                         UpdateUI();
                         
@@ -284,11 +285,15 @@ namespace CongklakAI
                     continue;
                 }
                 Vector3 targetPos = holeTransforms[holeIdx].position;
-                targetPos.z += zOffset;
+                targetPos.z = zOffset;
                 
                 Vector3 startPos = handShell.transform.position;
                 float distance = Vector3.Distance(startPos, targetPos);
-                float duration = distance / shellMoveSpeed;
+                
+                // Gunakan durasi tetap untuk drop pertama (simetris dengan pickup), dan kecepatan linear untuk drop selanjutnya
+                float duration = isFirstDropAfterPickup ? handTravelDuration : (distance / shellMoveSpeed);
+                isFirstDropAfterPickup = false; // Reset flag setelah drop pertama dilakukan
+                
                 float elapsed = 0;
 
                 while (elapsed < duration)
@@ -380,7 +385,7 @@ namespace CongklakAI
                 audioSource.PlayOneShot(swooshSound);
 
             // 2. Animasi ke Tangan (Hand Target)
-            float duration = 0.6f;
+            float duration = handTravelDuration;
             float elapsed = 0;
             Vector3 startHandPos = handTarget != null ? handTarget.position : holeTransforms[storeIdx].position;
 
@@ -453,7 +458,7 @@ namespace CongklakAI
                 audioSource.PlayOneShot(swooshSound);
 
             // 2. Animasi bergerak ke arah posisi tangan
-            float duration = 0.5f;
+            float duration = handTravelDuration;
             float elapsed = 0;
             while (elapsed < duration)
             {
