@@ -10,16 +10,21 @@ namespace CongklakAI
 {
     public class CongklakGameController : MonoBehaviour
     {
+        #region 1. Configuration & Parameters
         [Header("AI Configuration")]
         public AIBrain aiBrain;
         public bool isP1Human = true;
         public bool isP2Human = false;
+
+        // Static variable untuk menampung pilihan dari Main Menu
+        public static bool IsP2HumanOverride = false;
         
         [Header("Difficulty Parameters")]
-        public float sensitivityA = 10.0f; // Default disamakan dengan AlphaDDA1.py
-        public float offsetX0 = 0.0f;
+        public float sensitivityA = 1.0f; // Calibrated Golden Parameter (A=1.0)
+        public float offsetX0 = -2.0f;    // Calibrated Golden Parameter (X0=-2.0)
         public int maxSims = 300;
         public float stepDelay = 0.2f; // Time between shell drops
+        #endregion
 
         [Header("Visual Tuning")]
         public float holeRadius = 0.15f; // Radius penyebaran biji di dalam lubang
@@ -34,8 +39,18 @@ namespace CongklakAI
         public GameObject shellPrefab;   // Assign a small shell/circle prefab
         public float shellMoveSpeed = 15f; // Speed of the shell moving between holes
         public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
+
+        #region 2. Suit System
+        [Header("Suit System")]
+        public GameObject suitCanvas;      // Drag SuitCanvas ke sini
+        public TMPro.TextMeshProUGUI suitResultText;
+        
+        public enum GameState { SuitPhase, Playing, GameOver }
+        public GameState currentState = GameState.SuitPhase;
+        public int humanSuitChoice = -1; // 0: Rock, 1: Paper, 2: Scissors
         public Transform p1HandTarget;    // Titik di dekat area bawah (P1)
         public Transform p2HandTarget;    // Titik di dekat area atas (P2)
+        #endregion
 
         [Header("Audio Settings")]
         public AudioSource audioSource;
@@ -43,6 +58,14 @@ namespace CongklakAI
         public AudioClip swooshSound;
         public AudioClip dropSound;
         public AudioClip bgMusic;
+
+        [Header("Glow Aesthetics")]
+        public Color p1GlowColor = Color.red;
+        public Color p2GlowColor = Color.blue;
+        public float glowBaseScale = 0.15f; // Skala dasar agar pas dengan lubang
+        public float glowPulseSpeed = 5f;
+        public float glowPulseAmount = 0.15f; 
+        public float tapScaleFactor = 0.8f; // Skala saat ditekan (Tap Feedback)
 
         [Header("UI References")]
         public TMP_Text handShellCounterText; // New: Text to display shell count in hand
@@ -57,9 +80,13 @@ namespace CongklakAI
         private Camera mainCamera;
         private List<GameObject>[] holeShells;
         private Vector3 shellBaseScale = Vector3.one;
+        private GameObject[] selectionGlows;
 
         void Start()
         {
+            // Ambil pilihan mode game dari Main Menu
+            isP2Human = IsP2HumanOverride;
+
             // Inisialisasi list untuk menampung objek shell di setiap lubang
             holeShells = new List<GameObject>[16];
 
@@ -99,8 +126,74 @@ namespace CongklakAI
                 handShellCounterText.gameObject.SetActive(false); // Hide initially
             }
 
+            // Inisialisasi Selection Glows dari Child (Mobile First)
+            selectionGlows = new GameObject[16];
+            for (int i = 0; i < 16; i++)
+            {
+                if (holeTransforms[i] != null)
+                {
+                    Transform glowT = holeTransforms[i].Find("Selection_Glow");
+                    if (glowT != null) selectionGlows[i] = glowT.gameObject;
+                }
+            }
+
+            // --- SUIT PHASE INIT ---
+            if (suitCanvas != null)
+            {
+                suitCanvas.SetActive(true);
+                currentState = GameState.SuitPhase;
+                if (suitResultText != null) suitResultText.text = "Pilih untuk menentukan urutan jalan!";
+            }
+            else
+            {
+                // Jika UI Suit tidak ada, langsung mulai
+                currentState = GameState.Playing;
+                StartCoroutine(GameLoop());
+            }
+        }
+
+        #region 3. Suit Logic
+        // Dipanggil oleh tombol Gunting/Batu/Kertas di UI
+        public void OnHumanSuitSelect(int choice)
+        {
+            if (currentState != GameState.SuitPhase) return;
+            
+            humanSuitChoice = choice;
+            int aiChoice = UnityEngine.Random.Range(0, 3);
+            ResolveSuit(humanSuitChoice, aiChoice);
+        }
+
+        private async void ResolveSuit(int human, int ai)
+        {
+            string[] names = { "Batu", "Kertas", "Gunting" };
+            bool isDraw = human == ai;
+            bool humanWins = (human == 0 && ai == 2) || (human == 1 && ai == 0) || (human == 2 && ai == 1);
+
+            if (isDraw)
+            {
+                if (suitResultText != null) suitResultText.text = $"Seri! ({names[human]} vs {names[ai]}). Ulangi!";
+                return;
+            }
+
+            if (humanWins)
+            {
+                if (suitResultText != null) suitResultText.text = $"Anda Menang! ({names[human]} vs {names[ai]}). Anda Jadi P1.";
+                isP1Human = true;
+                isP2Human = IsP2HumanOverride; 
+            }
+            else
+            {
+                if (suitResultText != null) suitResultText.text = $"Anda Kalah! ({names[human]} vs {names[ai]}). Anda Jadi P2.";
+                isP1Human = false;
+                isP2Human = true;
+            }
+
+            await Task.Delay(2000); 
+            if (suitCanvas != null) suitCanvas.SetActive(false);
+            currentState = GameState.Playing;
             StartCoroutine(GameLoop());
         }
+        #endregion
 
         void Update()
         {
@@ -110,10 +203,13 @@ namespace CongklakAI
             // Selalu sinkronkan posisi teks UI dengan posisi lubang
             AlignUIToWorld();
 
+            // Update Highlight (Glow) untuk lubang yang aktif
+            UpdateHighlights();
+
             if (mainCamera == null || !isInteracting) return;
 
             // Detect clicks on World Space Sprites using the New Input System
-            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame)
+            if (Pointer.current != null && Pointer.current.press.wasReleasedThisFrame)
             {
                 Vector3 mousePos = Pointer.current.position.ReadValue();
 
@@ -527,6 +623,63 @@ namespace CongklakAI
         {
             Debug.Log($"[Game] {msg}");
             if (statusText != null) statusText.text = msg;
+        }
+
+        private void UpdateHighlights()
+        {
+            if (selectionGlows == null) return;
+
+            // Hitung denyut berdasarkan waktu
+            float pulse = 1f + Mathf.Sin(Time.time * glowPulseSpeed) * glowPulseAmount;
+
+            // Deteksi posisi sentuhan untuk Tap Feedback (Mobile First)
+            Vector2 pointerPos = Pointer.current.position.ReadValue();
+            float zDist = Mathf.Abs(mainCamera.transform.position.z);
+            Vector3 worldPos3D = mainCamera.ScreenToWorldPoint(new Vector3(pointerPos.x, pointerPos.y, zDist));
+            Vector2 worldPos2D = new Vector2(worldPos3D.x, worldPos3D.y);
+            Collider2D pressedCollider = (Pointer.current != null && Pointer.current.press.isPressed) ? Physics2D.OverlapPoint(worldPos2D) : null;
+
+            for (int i = 0; i < 16; i++)
+            {
+                if (selectionGlows[i] == null) continue;
+
+                // Tampilkan glow jika: 1. Giliran manusia, 2. Lubang milik pemain aktif, 3. Lubang ada isinya
+                bool isP1Hole = (i >= 0 && i <= 6);
+                bool shouldShow = isInteracting && IsMyTurnHole(i) && game.board[i] > 0;
+                
+                if (selectionGlows[i].activeSelf != shouldShow)
+                    selectionGlows[i].SetActive(shouldShow);
+
+                // Efek visual saat aktif
+                if (shouldShow)
+                {
+                    float currentPulse = pulse;
+
+                    // Tap Feedback: Mengecilkan skala jika sedang ditekan
+                    if (pressedCollider != null && pressedCollider.gameObject == holeTransforms[i].gameObject)
+                    {
+                        currentPulse *= tapScaleFactor;
+                    }
+
+                    // 1. Terapkan Denyut (Pulse) relatif terhadap skala dasar
+                    selectionGlows[i].transform.localScale = Vector3.one * (glowBaseScale * currentPulse);
+
+                    // 2. Terapkan Rotasi
+                    selectionGlows[i].transform.Rotate(0, 0, Time.deltaTime * 60f);
+
+                    // 3. Terapkan Warna berdasarkan Pemain
+                    if (selectionGlows[i].TryGetComponent<SpriteRenderer>(out var sr))
+                    {
+                        sr.color = isP1Hole ? p1GlowColor : p2GlowColor;
+                    }
+                }
+            }
+        }
+
+        private bool IsMyTurnHole(int idx)
+        {
+            if (game.currentPlayer == 1) return idx >= 0 && idx <= 6;
+            return idx >= 8 && idx <= 14;
         }
 
         private void UpdateUI()
