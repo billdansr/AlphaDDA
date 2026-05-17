@@ -48,6 +48,9 @@ namespace CongklakAI
     /// </summary>
     public class AlphaDDA_MCTS
     {
+        public float lastV { get; private set; } = 0.0f;
+        public int lastSims { get; private set; } = 0;
+
         private MCTSNode root;
         private AIBrain brain;
         
@@ -91,21 +94,35 @@ namespace CongklakAI
         {
             if (onComplete == null) yield break;
 
-            // 1. Calculate Dynamic Simulations
-            // 1. DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
+            // 1. Calculate Simulations
             var (pi_root, v_root) = brain.Predict(GenerateStates(root.board, root.player));
             
             // Add to moving average queue
             winScoreQueue.Enqueue(v_root);
             while (winScoreQueue.Count > numMean) winScoreQueue.Dequeue();
             
+            int numSims;
             float winScore = winScoreQueue.Average(); 
-            // Tambahkan offset agar saat v=0, sims = N_MAX / 2
-            float exponent = -A * (winScore + X0) + Mathf.Log10(N_MAX / 2.0f);
-            exponent = Mathf.Min(exponent, 10f); // Safety clip
-            int numSims = Mathf.CeilToInt(Mathf.Pow(10f, exponent));
-            numSims = Mathf.Clamp(numSims, 1, N_MAX);
-            Debug.Log($"[AlphaDDA] v_raw={v_root:F3}, v_avg={winScore:F3} -> Sims: {numSims}");
+            
+            // If DDA is disabled (A == 0.0f), bypass dynamic scaling and use full N_MAX
+            if (Mathf.Approximately(A, 0.0f))
+            {
+                numSims = N_MAX; // Murni MCTS dengan simulasi konstan (Statis)
+            }
+            else
+            {
+                // DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
+                float exponent = -A * (winScore + X0) + Mathf.Log10(N_MAX / 2.0f);
+                exponent = Mathf.Min(exponent, 10f); // Safety clip
+                numSims = Mathf.CeilToInt(Mathf.Pow(10f, exponent));
+                numSims = Mathf.Clamp(numSims, 1, N_MAX);
+            }
+            
+            // Record variables for logging
+            this.lastV = v_root;
+            this.lastSims = numSims;
+
+            Debug.Log($"[AlphaDDA] v_raw={v_root:F3}, v_avg={winScore:F3} -> Sims: {numSims} (isDDA={!Mathf.Approximately(A, 0.0f)})");
 
             // 2. MCTS Logic
             for (int i = 0; i < numSims; i++)

@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using System.Threading.Tasks;
 using UnityEngine.InputSystem;
 using TMPro;
+using UnityEngine.SceneManagement;
 
 namespace CongklakAI
 {
@@ -40,16 +41,40 @@ namespace CongklakAI
         public float shellMoveSpeed = 15f; // Speed of the shell moving between holes
         public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
 
-        #region 2. Suit System
-        [Header("Suit System")]
+        #region 2. Suit & Logging System
+        [Header("Suit & Logging System")]
         public GameObject suitCanvas;      // Drag SuitCanvas ke sini
         public TMPro.TextMeshProUGUI suitResultText;
+        public string participantName = "Guest";
+        public static string ParticipantNameOverride = "Guest";
         
+        [Header("DDA Settings")]
+        public bool isDDAEnabled = true;
+        public static bool IsDDAEnabledOverride = true;
+
+        [Header("Google Form Configuration")]
+        public string gFormUrl = "https://docs.google.com/forms/d/e/.../formResponse";
+        public string[] entryIds = new string[11]; // Isi entry.123456 di Inspector (11 entries)
+
         public enum GameState { SuitPhase, Playing, GameOver }
         public GameState currentState = GameState.SuitPhase;
+        
+        private float gameStartTime;
+        private float turnStartTime;
+        private List<string> gameLogs = new List<string>();
+        
         public int humanSuitChoice = -1; // 0: Rock, 1: Paper, 2: Scissors
         public Transform p1HandTarget;    // Titik di dekat area bawah (P1)
         public Transform p2HandTarget;    // Titik di dekat area atas (P2)
+        
+        [Header("Game Over UI Popup")]
+        public GameObject gameOverPanel;               // Drag Game Over Panel here
+        public TMPro.TextMeshProUGUI gameOverWinnerText; // Drag TextMeshPro text for winner here
+        public TMPro.TextMeshProUGUI gameOverDetailsText; // Drag TextMeshPro text for scores/stats here
+        public TMPro.TextMeshProUGUI uploadStatusText;   // Drag TextMeshPro text for upload status here
+        public UnityEngine.UI.Button playAgainButton;    // Drag Play Again button here
+        public UnityEngine.UI.Button mainMenuButton;     // Drag Main Menu button here
+        public string mainMenuSceneName = "Main Menu";  // Avoid magic strings! Expose scene name in inspector
         #endregion
 
         [Header("Audio Settings")]
@@ -58,6 +83,8 @@ namespace CongklakAI
         public AudioClip swooshSound;
         public AudioClip dropSound;
         public AudioClip bgMusic;
+        public AudioClip victorySound;
+        public AudioClip defeatSound;
 
         [Header("Glow Aesthetics")]
         public Color p1GlowColor = Color.red;
@@ -84,6 +111,27 @@ namespace CongklakAI
 
         void Start()
         {
+            // Seed true randomness using system ticks to prevent repetitive Editor patterns
+            UnityEngine.Random.InitState((int)System.DateTime.Now.Ticks);
+
+            if (gameOverPanel != null) gameOverPanel.SetActive(false);
+            
+            participantName = ParticipantNameOverride;
+            
+            // Auto-assign DDA based on name suffix for experimental convenience
+            if (participantName.EndsWith("A", System.StringComparison.OrdinalIgnoreCase))
+            {
+                isDDAEnabled = false;
+            }
+            else if (participantName.EndsWith("B", System.StringComparison.OrdinalIgnoreCase))
+            {
+                isDDAEnabled = true;
+            }
+            else
+            {
+                isDDAEnabled = IsDDAEnabledOverride;
+            }
+            
             // Ambil pilihan mode game dari Main Menu
             isP2Human = IsP2HumanOverride;
 
@@ -138,7 +186,15 @@ namespace CongklakAI
             }
 
             // --- SUIT PHASE INIT ---
-            if (suitCanvas != null)
+            if (isP2Human)
+            {
+                // Jika Human vs Human, langsung bypass Suit dan langsung main!
+                isP1Human = true;
+                if (suitCanvas != null) suitCanvas.SetActive(false);
+                currentState = GameState.Playing;
+                StartCoroutine(GameLoop());
+            }
+            else if (suitCanvas != null)
             {
                 suitCanvas.SetActive(true);
                 currentState = GameState.SuitPhase;
@@ -191,9 +247,112 @@ namespace CongklakAI
             await Task.Delay(2000); 
             if (suitCanvas != null) suitCanvas.SetActive(false);
             currentState = GameState.Playing;
+            
+            // Start Timers
+            gameStartTime = Time.time;
+            turnStartTime = Time.time;
+            
             StartCoroutine(GameLoop());
         }
+
+        private void LogMove(int player, int move, float v, int sims, int s1, int s2)
+        {
+            float thinkTime = Time.time - turnStartTime;
+            string logRow = $"{participantName},{isDDAEnabled},{Time.time - gameStartTime:F2},{turnCount},{player},{move},{v:F3},{sims},{thinkTime:F2},{s1},{s2}";
+            gameLogs.Add(logRow);
+            
+            // Reset timer untuk langkah berikutnya
+            turnStartTime = Time.time;
+        }
+
+        private void ExportLogsToCSV()
+        {
+            // 1. Simpan Lokal (Backup)
+            string folderPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs");
+            if (!System.IO.Directory.Exists(folderPath)) System.IO.Directory.CreateDirectory(folderPath);
+
+            string fileName = $"GameLog_{participantName}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            string filePath = System.IO.Path.Combine(folderPath, fileName);
+
+            string header = "Participant,IsDDAEnabled,TimeInSession,Turn,Player,Move,BoardEval_V,Simulations,ThinkTime,ScoreP1,ScoreP2\n";
+            string content = header + string.Join("\n", gameLogs);
+
+            System.IO.File.WriteAllText(filePath, content);
+            Debug.Log($"[Logger] Backup lokal disimpan ke: {filePath}");
+
+            // 2. Kirim Online (Cloud)
+            StartCoroutine(UploadAllLogs());
+        }
+
+        private IEnumerator UploadAllLogs()
+        {
+            Debug.Log("[Logger] Memulai upload data ke Google Sheets...");
+            if (uploadStatusText != null) uploadStatusText.text = "Mengunggah data penelitian (0%)...";
+            
+            int count = 0;
+            foreach (string logRow in gameLogs)
+            {
+                string[] data = logRow.Split(',');
+                yield return StartCoroutine(SendRowToGoogle(data));
+                count++;
+                if (uploadStatusText != null) 
+                    uploadStatusText.text = $"Mengunggah data penelitian ({Mathf.RoundToInt((float)count / gameLogs.Count * 100)}%)...";
+            }
+            
+            Debug.Log("[Logger] Semua data berhasil terunggah!");
+            if (uploadStatusText != null) uploadStatusText.text = "Data Penelitian Berhasil Diunggah! (100% Aman)";
+            
+            // Aktifkan kembali tombol navigasi setelah upload selesai aman
+            if (playAgainButton != null) playAgainButton.interactable = true;
+            if (mainMenuButton != null) mainMenuButton.interactable = true;
+        }
+
+        private IEnumerator SendRowToGoogle(string[] data)
+        {
+            if (string.IsNullOrEmpty(gFormUrl) || entryIds == null || entryIds.Length == 0) yield break;
+
+            WWWForm form = new WWWForm();
+            for (int i = 0; i < entryIds.Length && i < data.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(entryIds[i]))
+                {
+                    form.AddField(entryIds[i], data[i]);
+                }
+            }
+
+            using (UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequest.Post(gFormUrl, form))
+            {
+                yield return www.SendWebRequest();
+
+                if (www.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning("[Logger] Gagal upload baris: " + www.error);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tombol Rahasia: Mengabaikan setelan nama dan mengubah status DDA secara manual saat game berlangsung.
+        /// </summary>
+        public void ToggleDDAManually()
+        {
+            isDDAEnabled = !isDDAEnabled;
+            Debug.Log($"[Logger] DDA secara manual diubah menjadi: {isDDAEnabled}");
+            SetStatus($"DDA {(isDDAEnabled ? "AKTIF" : "NON-AKTIF")} (Manual)");
+        }
+
+        /// <summary>
+        /// Dipanggil langsung oleh UI Toggle di dalam game (Event: On Value Changed).
+        /// </summary>
+        /// <param name="isEnabled">Status toggle DDA</param>
+        public void SetDDAGameToggle(bool isEnabled)
+        {
+            isDDAEnabled = isEnabled;
+            Debug.Log($"[Settings] DDA diubah lewat UI menjadi: {isEnabled}");
+            SetStatus($"DDA {(isEnabled ? "AKTIF" : "NON-AKTIF")}");
+        }
         #endregion
+
 
         void Update()
         {
@@ -262,6 +421,7 @@ namespace CongklakAI
                 }
 
                 bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
+                int playerTag = game.currentPlayer;
 
                 if (isHuman)
                 {
@@ -269,6 +429,10 @@ namespace CongklakAI
                     pendingMove = -1;
                     isInteracting = true;
                     yield return new WaitUntil(() => pendingMove != -1);
+                    
+                    // LOG HUMAN MOVE
+                    LogMove(playerTag, pendingMove, 0, 0, game.board[7], game.board[15]);
+                    
                     yield return StartCoroutine(ExecuteMove(pendingMove));
                 }
                 else
@@ -276,10 +440,14 @@ namespace CongklakAI
                     SetStatus($"AI (P{(game.currentPlayer == 1 ? "1" : "2")}) Thinking...");
 
                     int aiMove = -1;
-                    AlphaDDA_MCTS mcts = new AlphaDDA_MCTS(game, aiBrain, sensitivityA, offsetX0, maxSims);
+                    float activeSensitivity = isDDAEnabled ? sensitivityA : 0.0f;
+                    AlphaDDA_MCTS mcts = new AlphaDDA_MCTS(game, aiBrain, activeSensitivity, offsetX0, maxSims);
                     
                     // Run MCTS on main thread via Coroutine (Inference safe)
                     yield return StartCoroutine(mcts.RunCoroutine(turnCount, (move) => aiMove = move));
+
+                    // LOG AI MOVE (Capture DDA Metrics)
+                    LogMove(playerTag, aiMove, mcts.lastV, mcts.lastSims, game.board[7], game.board[15]);
 
                     yield return new WaitForSeconds(0.5f); // Cosmetic delay
                     if (aiMove != -1)
@@ -293,6 +461,57 @@ namespace CongklakAI
 
             SetStatus($"Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
             Debug.Log($"[Game] Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
+            
+            // 1. Hentikan Musik Latar
+            if (musicSource != null) musicSource.Stop();
+            
+            // 2. Tentukan Pemenang dan mainkan SFX kemenangan/kekalahan
+            bool humanWon = (game.winner == 1 && isP1Human) || (game.winner == -1 && isP2Human);
+            if (audioSource != null)
+            {
+                AudioClip clip = humanWon ? victorySound : defeatSound;
+                if (clip != null) audioSource.PlayOneShot(clip);
+            }
+
+            // 3. Tampilkan UI Panel Game Over
+            if (gameOverPanel != null)
+            {
+                gameOverPanel.SetActive(true);
+                
+                if (gameOverWinnerText != null)
+                {
+                    gameOverWinnerText.text = humanWon ? "Selamat, Anda Menang!" : "AI Menang! Tetap Semangat!";
+                }
+                
+                if (gameOverDetailsText != null)
+                {
+                    gameOverDetailsText.text = $"Skor Akhir\nP1 (Anda): {game.board[7]}  |  P2 (AI): {game.board[15]}\nTotal Turn: {turnCount}\nDDA Mode: {(isDDAEnabled ? "Aktif" : "Non-Aktif")}";
+                }
+                
+                // Matikan tombol sementara agar data penelitian terupload aman ke Google Form!
+                if (playAgainButton != null) playAgainButton.interactable = false;
+                if (mainMenuButton != null) mainMenuButton.interactable = false;
+                if (uploadStatusText != null) uploadStatusText.text = "Menyimpan data penelitian ke Cloud, mohon tunggu...";
+            }
+
+            // EXPORT DATA SETELAH SELESAI
+            ExportLogsToCSV();
+        }
+
+        /// <summary>
+        /// Dipanggil ketika tombol Play Again di Panel Game Over diklik.
+        /// </summary>
+        public void RestartGame()
+        {
+            SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+        }
+
+        /// <summary>
+        /// Dipanggil ketika tombol Main Menu di Panel Game Over diklik.
+        /// </summary>
+        public void BackToMainMenu()
+        {
+            SceneManager.LoadScene(mainMenuSceneName);
         }
 
         /// <summary>
