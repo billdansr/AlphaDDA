@@ -8,7 +8,7 @@ namespace CongklakAI
     public class AIBrain : MonoBehaviour
     {
         [Header("Model Settings")]
-        [Tooltip("The exported CongklakAlphaDDA.onnx file")]
+        [Tooltip("The exported CongklakAlphaZero.onnx file")]
         public Unity.InferenceEngine.ModelAsset modelAsset;
         
         private Worker worker;

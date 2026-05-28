@@ -54,7 +54,7 @@ def export():
     dummy_input = torch.randn(1, 3, 2, 8)
 
     # Export to ONNX
-    onnx_file = os.path.join(script_dir, "CongklakAlphaDDA.onnx")
+    onnx_file = os.path.join(script_dir, "CongklakAlphaZero.onnx")
     print(f"Exporting to {onnx_file}...")
     
     torch.onnx.export(
@@ -76,7 +76,7 @@ def export():
 
     print(f"Successfully exported {onnx_file}")
     print("\nNext Steps for Unity:")
-    print("1. Drag 'CongklakAlphaDDA.onnx' into your Unity Assets folder.")
+    print("1. Drag 'CongklakAlphaZero.onnx' into your Unity Assets folder.")
     print("2. Ensure the 'Inference Engine' (Sentis) package is installed.")
     print("3. Use the ModelInference C# script to load and run this model.")
 

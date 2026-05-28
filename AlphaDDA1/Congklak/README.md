@@ -30,7 +30,7 @@ Contoh: `python test_dda.py 1 300`
 ### 3. Integrasi ke Unity (Android)
 Untuk memperbarui otak AI di aplikasi Android:
 1. Jalankan `python onnx_export_unity.py`.
-2. Salin file `CongklakAlphaDDA.onnx` yang dihasilkan ke dalam folder `Assets/` di project Unity.
+2. Salin file `CongklakAlphaZero.onnx` yang dihasilkan ke dalam folder `Assets/` di project Unity.
 
 ---
 *Penelitian ini dikembangkan sebagai bagian dari tugas akhir/skripsi menggunakan metodologi Design Science Research Method (DSRM).*
