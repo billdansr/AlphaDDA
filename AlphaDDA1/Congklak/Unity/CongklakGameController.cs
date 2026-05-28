@@ -102,6 +102,7 @@ namespace CongklakAI
         private List<GameObject>[] holeShells;
         private Vector3 shellBaseScale = Vector3.one;
         private GameObject[] selectionGlows;
+        private bool isSyncingLogs = false;
 
         void Start()
         {
@@ -112,19 +113,8 @@ namespace CongklakAI
             
             participantName = ParticipantNameOverride;
             
-            // Auto-assign DDA based on name suffix for experimental convenience
-            if (participantName.EndsWith("A", System.StringComparison.OrdinalIgnoreCase))
-            {
-                isDDAEnabled = false;
-            }
-            else if (participantName.EndsWith("B", System.StringComparison.OrdinalIgnoreCase))
-            {
-                isDDAEnabled = true;
-            }
-            else
-            {
-                isDDAEnabled = IsDDAEnabledOverride;
-            }
+            // Gunakan nilai override yang sudah ditentukan dari Main Menu atau hasil 'flip' sesi sebelumnya.
+            isDDAEnabled = IsDDAEnabledOverride;
             
             // Ambil pilihan mode game dari Main Menu
             isP2Human = IsP2HumanOverride;
@@ -189,6 +179,9 @@ namespace CongklakAI
             turnStartTime = Time.time;
 
             StartCoroutine(GameLoop());
+
+            // Coba sinkronisasi data lama yang mungkin gagal kirim di sesi sebelumnya
+            StartCoroutine(UploadPendingLogs());
         }
 
         
@@ -205,44 +198,76 @@ namespace CongklakAI
 
         private void ExportLogsToCSV()
         {
-            // 1. Simpan Lokal (Backup)
-            string folderPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs");
+            // 1. Simpan ke folder 'Pending'
+            string folderPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs", "Pending");
             if (!System.IO.Directory.Exists(folderPath)) System.IO.Directory.CreateDirectory(folderPath);
 
             string fileName = $"GameLog_{participantName}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
             string filePath = System.IO.Path.Combine(folderPath, fileName);
 
-            string header = "Participant,IsDDAEnabled,TimeInSession,Turn,Player,Move,BoardEval_V,Simulations,ThinkTime,ScoreP1,ScoreP2\n";
+            string header = "Participant,IsDDAEnabled,TimeInSession,Turn,Player,Move,BoardEval_V,Simulations,ThinkTime,ScoreP1,ScoreP2";
             string content = header + string.Join("\n", gameLogs);
 
             System.IO.File.WriteAllText(filePath, content);
-            Debug.Log($"[Logger] Backup lokal disimpan ke: {filePath}");
+            Debug.Log($"[Logger] Log disimpan ke folder Pending: {filePath}");
 
-            // 2. Kirim Online (Cloud)
-            StartCoroutine(UploadAllLogs());
+            // 2. Jalankan proses sinkronisasi
+            StartCoroutine(UploadPendingLogs());
         }
 
-        private IEnumerator UploadAllLogs()
+        private IEnumerator UploadPendingLogs()
         {
+            if (isSyncingLogs) yield break;
+            isSyncingLogs = true;
+
+            string pendingPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs", "Pending");
+            string uploadedPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs", "Uploaded");
+
+            if (!System.IO.Directory.Exists(pendingPath)) { isSyncingLogs = false; yield break; }
+            if (!System.IO.Directory.Exists(uploadedPath)) System.IO.Directory.CreateDirectory(uploadedPath);
+
+            string[] pendingFiles = System.IO.Directory.GetFiles(pendingPath, "*.csv");
+            if (pendingFiles.Length == 0) { isSyncingLogs = false; yield break; }
+
             Debug.Log("[Logger] Memulai upload data ke Google Sheets...");
-            if (uploadStatusText != null) uploadStatusText.text = "Mengunggah data penelitian (0%)...";
             
-            int count = 0;
-            foreach (string logRow in gameLogs)
+            foreach (string file in pendingFiles)
             {
-                string[] data = logRow.Split(',');
-                yield return StartCoroutine(SendRowToGoogle(data));
-                count++;
-                if (uploadStatusText != null) 
-                    uploadStatusText.text = $"Mengunggah data penelitian ({Mathf.RoundToInt((float)count / gameLogs.Count * 100)}%)...";
+                string[] lines = System.IO.File.ReadAllLines(file);
+                int lineCount = 0;
+
+                foreach (string line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("Participant")) continue;
+
+                    string[] data = line.Split(',');
+                    yield return StartCoroutine(SendRowToGoogle(data));
+                    
+                    lineCount++;
+                    if (uploadStatusText != null) 
+                        uploadStatusText.text = $"Sinkronisasi ({pendingFiles.Length} file): {lineCount}/{lines.Length - 1}";
+                }
+
+                // Pindahkan ke folder 'Uploaded' hanya jika file selesai diproses
+                string destFile = System.IO.Path.Combine(uploadedPath, System.IO.Path.GetFileName(file));
+                if (System.IO.File.Exists(destFile)) System.IO.File.Delete(destFile);
+                System.IO.File.Move(file, destFile);
+            }
+
+            if (uploadStatusText != null) uploadStatusText.text = "Semua data berhasil disinkronkan!";
+            
+            // Jika masih ada file yang tersisa di folder pending (karena gagal upload di tengah jalan)
+            int remaining = System.IO.Directory.GetFiles(pendingPath, "*.csv").Length;
+            if (remaining > 0 && uploadStatusText != null)
+            {
+                uploadStatusText.text = $"Sinkronisasi terhenti. {remaining} sesi tersimpan lokal (Offline).";
             }
             
-            Debug.Log("[Logger] Semua data berhasil terunggah!");
-            if (uploadStatusText != null) uploadStatusText.text = "Data Penelitian Berhasil Diunggah! (100% Aman)";
-            
-            // Aktifkan kembali tombol navigasi setelah upload selesai aman
+            // Aktifkan kembali tombol navigasi
             if (playAgainButton != null) playAgainButton.interactable = true;
             if (mainMenuButton != null) mainMenuButton.interactable = true;
+            
+            isSyncingLogs = false;
         }
 
         private IEnumerator SendRowToGoogle(string[] data)
@@ -445,6 +470,8 @@ namespace CongklakAI
             // Balik (flip) status DDA secara otomatis untuk sesi bermain berikutnya (Within-Subjects Design)
             IsDDAEnabledOverride = !IsDDAEnabledOverride;
             Debug.Log($"[Game] Restarting Game. DDA otomatis di-flip menjadi: {IsDDAEnabledOverride}");
+            PlayerPrefs.SetInt("DDAEnabled", IsDDAEnabledOverride ? 1 : 0);
+            PlayerPrefs.Save();
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
@@ -453,6 +480,12 @@ namespace CongklakAI
         /// </summary>
         public void BackToMainMenu()
         {
+            // Balik (flip) status DDA agar saat kembali ke Main Menu, urutan eksperimen tetap berlanjut
+            // Ini memastikan sesi berikutnya (saat klik Play lagi) menggunakan mode yang berbeda
+            IsDDAEnabledOverride = !IsDDAEnabledOverride;
+            PlayerPrefs.SetInt("DDAEnabled", IsDDAEnabledOverride ? 1 : 0);
+            PlayerPrefs.Save();
+
             SceneManager.LoadScene(mainMenuSceneName);
         }
 

@@ -38,12 +38,6 @@ namespace CongklakAI
                 ddaToggle.onValueChanged.AddListener(OnDDAToggledManually);
             }
 
-            // Jika sejak awal sudah ada nama tersimpan, jalankan logika auto-toggle sekali
-            if (!string.IsNullOrEmpty(savedName))
-            {
-                OnNameValueChanged(savedName);
-            }
-
             // 3. Daftarkan event tombol Play
             if (playVsAIButton != null)
                 playVsAIButton.onClick.AddListener(() => StartGame(false)); // vs AI
