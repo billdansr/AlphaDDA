@@ -36,34 +36,29 @@ namespace CongklakAI
         public float uiVerticalOffset = 1.2f;   // Jarak atas/bawah
         public float uiHorizontalOffset = 1.5f; // Jarak kiri/kanan
 
+        
+        
+
         [Header("Animation Settings")]
         public GameObject shellPrefab;   // Assign a small shell/circle prefab
         public float shellMoveSpeed = 15f; // Speed of the shell moving between holes
         public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
 
-        #region 2. Suit & Logging System
-        [Header("Suit & Logging System")]
-        public GameObject suitCanvas;      // Drag SuitCanvas ke sini
-        public TMPro.TextMeshProUGUI suitResultText;
         public string participantName = "Guest";
         public static string ParticipantNameOverride = "Guest";
-        
+
         [Header("DDA Settings")]
         public bool isDDAEnabled = true;
         public static bool IsDDAEnabledOverride = true;
 
         [Header("Google Form Configuration")]
         public string gFormUrl = "https://docs.google.com/forms/d/e/.../formResponse";
-        public string[] entryIds = new string[11]; // Isi entry.123456 di Inspector (11 entries)
+        public string[] entryIds = new string[11]; // Fill with Google Form entry IDs (e.g., "entry.123456"). See gform_setup.md for guidance.
 
-        public enum GameState { SuitPhase, Playing, GameOver }
-        public GameState currentState = GameState.SuitPhase;
-        
         private float gameStartTime;
         private float turnStartTime;
-        private List<string> gameLogs = new List<string>();
-        
-        public int humanSuitChoice = -1; // 0: Rock, 1: Paper, 2: Scissors
+        private List<string> gameLogs = new List<string>();        
+
         public Transform p1HandTarget;    // Titik di dekat area bawah (P1)
         public Transform p2HandTarget;    // Titik di dekat area atas (P2)
         
@@ -75,7 +70,6 @@ namespace CongklakAI
         public UnityEngine.UI.Button playAgainButton;    // Drag Play Again button here
         public UnityEngine.UI.Button mainMenuButton;     // Drag Main Menu button here
         public string mainMenuSceneName = "Main Menu";  // Avoid magic strings! Expose scene name in inspector
-        #endregion
 
         [Header("Audio Settings")]
         public AudioSource audioSource;
@@ -185,75 +179,19 @@ namespace CongklakAI
                 }
             }
 
-            // --- SUIT PHASE INIT ---
-            if (isP2Human)
-            {
-                // Jika Human vs Human, langsung bypass Suit dan langsung main!
-                isP1Human = true;
-                if (suitCanvas != null) suitCanvas.SetActive(false);
-                currentState = GameState.Playing;
-                StartCoroutine(GameLoop());
-            }
-            else if (suitCanvas != null)
-            {
-                suitCanvas.SetActive(true);
-                currentState = GameState.SuitPhase;
-                if (suitResultText != null) suitResultText.text = "Pilih untuk menentukan urutan jalan!";
-            }
-            else
-            {
-                // Jika UI Suit tidak ada, langsung mulai
-                currentState = GameState.Playing;
-                StartCoroutine(GameLoop());
-            }
-        }
+            // Kontrol Eksperimen: Manusia selalu P1 untuk menstandarisasi giliran pertama.
+            // Ini mencegah 'first-mover advantage' menjadi variabel pengganggu dalam analisis DDA.
+            isP1Human = true;
+            isP2Human = IsP2HumanOverride; 
 
-        #region 3. Suit Logic
-        // Dipanggil oleh tombol Gunting/Batu/Kertas di UI
-        public void OnHumanSuitSelect(int choice)
-        {
-            if (currentState != GameState.SuitPhase) return;
-            
-            humanSuitChoice = choice;
-            int aiChoice = UnityEngine.Random.Range(0, 3);
-            ResolveSuit(humanSuitChoice, aiChoice);
-        }
-
-        private async void ResolveSuit(int human, int ai)
-        {
-            string[] names = { "Batu", "Kertas", "Gunting" };
-            bool isDraw = human == ai;
-            bool humanWins = (human == 0 && ai == 2) || (human == 1 && ai == 0) || (human == 2 && ai == 1);
-
-            if (isDraw)
-            {
-                if (suitResultText != null) suitResultText.text = $"Seri! ({names[human]} vs {names[ai]}). Ulangi!";
-                return;
-            }
-
-            if (humanWins)
-            {
-                if (suitResultText != null) suitResultText.text = $"Anda Menang! ({names[human]} vs {names[ai]}). Anda Jadi P1.";
-                isP1Human = true;
-                isP2Human = IsP2HumanOverride; 
-            }
-            else
-            {
-                if (suitResultText != null) suitResultText.text = $"Anda Kalah! ({names[human]} vs {names[ai]}). Anda Jadi P2.";
-                isP1Human = false;
-                isP2Human = true;
-            }
-
-            await Task.Delay(2000); 
-            if (suitCanvas != null) suitCanvas.SetActive(false);
-            currentState = GameState.Playing;
-            
-            // Start Timers
+            // Mulai pencatatan waktu sesi
             gameStartTime = Time.time;
             turnStartTime = Time.time;
-            
+
             StartCoroutine(GameLoop());
         }
+
+        
 
         private void LogMove(int player, int move, float v, int sims, int s1, int s2)
         {
@@ -351,7 +289,7 @@ namespace CongklakAI
             Debug.Log($"[Settings] DDA diubah lewat UI menjadi: {isEnabled}");
             SetStatus($"DDA {(isEnabled ? "AKTIF" : "NON-AKTIF")}");
         }
-        #endregion
+        
 
 
         void Update()
@@ -485,7 +423,8 @@ namespace CongklakAI
                 
                 if (gameOverDetailsText != null)
                 {
-                    gameOverDetailsText.text = $"Skor Akhir\nP1 (Anda): {game.board[7]}  |  P2 (AI): {game.board[15]}\nTotal Turn: {turnCount}\nDDA Mode: {(isDDAEnabled ? "Aktif" : "Non-Aktif")}";
+                    // P1 selalu Human (Opsi A), P2 selalu AI
+                    gameOverDetailsText.text = $"Skor Akhir\nP1 (Anda): {game.board[7]}  |  P2 (AI): {game.board[15]}\nTotal Turn: {turnCount}\nDDA Mode: {(isDDAEnabled ? "Aktif" : "Non-Aktif")}\nUrutan: Anda Jalan Pertama (P1)";
                 }
                 
                 // Matikan tombol sementara agar data penelitian terupload aman ke Google Form!
@@ -503,6 +442,9 @@ namespace CongklakAI
         /// </summary>
         public void RestartGame()
         {
+            // Balik (flip) status DDA secara otomatis untuk sesi bermain berikutnya (Within-Subjects Design)
+            IsDDAEnabledOverride = !IsDDAEnabledOverride;
+            Debug.Log($"[Game] Restarting Game. DDA otomatis di-flip menjadi: {IsDDAEnabledOverride}");
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
