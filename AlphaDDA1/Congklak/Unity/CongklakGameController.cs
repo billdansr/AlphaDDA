@@ -111,7 +111,12 @@ namespace CongklakAI
 
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             
+            // Ambil nama dari override (Main Menu) atau fallback ke PlayerPrefs jika scene dijalankan langsung
             participantName = ParticipantNameOverride;
+            if (participantName == "Guest" || string.IsNullOrEmpty(participantName))
+            {
+                participantName = PlayerPrefs.GetString(MainMenuManager.PLAYER_PREFS_NAME_KEY, "Guest");
+            }
             
             // Gunakan nilai override yang sudah ditentukan dari Main Menu atau hasil 'flip' sesi sebelumnya.
             isDDAEnabled = IsDDAEnabledOverride;
@@ -300,6 +305,7 @@ namespace CongklakAI
         public void ToggleDDAManually()
         {
             isDDAEnabled = !isDDAEnabled;
+            IsDDAEnabledOverride = isDDAEnabled; // Sinkronkan ke override agar alur restart tetap konsisten
             Debug.Log($"[Logger] DDA secara manual diubah menjadi: {isDDAEnabled}");
             SetStatus($"DDA {(isDDAEnabled ? "AKTIF" : "NON-AKTIF")} (Manual)");
         }
@@ -311,6 +317,7 @@ namespace CongklakAI
         public void SetDDAGameToggle(bool isEnabled)
         {
             isDDAEnabled = isEnabled;
+            IsDDAEnabledOverride = isEnabled; // Sinkronkan agar flip di akhir game merujuk pada state terakhir
             Debug.Log($"[Settings] DDA diubah lewat UI menjadi: {isEnabled}");
             SetStatus($"DDA {(isEnabled ? "AKTIF" : "NON-AKTIF")}");
         }
@@ -470,7 +477,8 @@ namespace CongklakAI
             // Balik (flip) status DDA secara otomatis untuk sesi bermain berikutnya (Within-Subjects Design)
             IsDDAEnabledOverride = !IsDDAEnabledOverride;
             Debug.Log($"[Game] Restarting Game. DDA otomatis di-flip menjadi: {IsDDAEnabledOverride}");
-            PlayerPrefs.SetInt("DDAEnabled", IsDDAEnabledOverride ? 1 : 0);
+            PlayerPrefs.SetInt(MainMenuManager.PLAYER_PREFS_DDA_KEY, IsDDAEnabledOverride ? 1 : 0);
+            PlayerPrefs.SetString(MainMenuManager.PLAYER_PREFS_NAME_KEY, participantName);
             PlayerPrefs.Save();
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
@@ -483,7 +491,8 @@ namespace CongklakAI
             // Balik (flip) status DDA agar saat kembali ke Main Menu, urutan eksperimen tetap berlanjut
             // Ini memastikan sesi berikutnya (saat klik Play lagi) menggunakan mode yang berbeda
             IsDDAEnabledOverride = !IsDDAEnabledOverride;
-            PlayerPrefs.SetInt("DDAEnabled", IsDDAEnabledOverride ? 1 : 0);
+            PlayerPrefs.SetInt(MainMenuManager.PLAYER_PREFS_DDA_KEY, IsDDAEnabledOverride ? 1 : 0);
+            PlayerPrefs.SetString(MainMenuManager.PLAYER_PREFS_NAME_KEY, participantName);
             PlayerPrefs.Save();
 
             SceneManager.LoadScene(mainMenuSceneName);

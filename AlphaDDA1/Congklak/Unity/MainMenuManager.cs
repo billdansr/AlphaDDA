@@ -16,8 +16,8 @@ namespace CongklakAI
         [Header("Scene Configuration")]
         public string gameSceneName = "Game"; // Nama scene game Anda
 
-        private const string PLAYER_PREFS_NAME_KEY = "ParticipantName";
-        private const string PLAYER_PREFS_DDA_KEY = "DDAEnabled";
+        public const string PLAYER_PREFS_NAME_KEY = "ParticipantName";
+        public const string PLAYER_PREFS_DDA_KEY = "DDAEnabled";
 
         void Start()
         {
@@ -26,8 +26,8 @@ namespace CongklakAI
             if (nameInputField != null)
             {
                 nameInputField.text = savedName;
-                // Daftarkan listener ketika teks berubah untuk auto-toggle DDA
-                nameInputField.onValueChanged.AddListener(OnNameValueChanged);
+                // Gunakan onEndEdit agar tidak mengganggu saat sedang mengetik (mencegah flickering)
+                nameInputField.onEndEdit.AddListener(OnNameValueChanged);
             }
 
             // 2. Ambil state DDA terakhir dari PlayerPrefs
@@ -76,6 +76,9 @@ namespace CongklakAI
         /// </summary>
         private void OnDDAToggledManually(bool isOn)
         {
+            // Simpan perubahan manual segera agar persisten
+            PlayerPrefs.SetInt(PLAYER_PREFS_DDA_KEY, isOn ? 1 : 0);
+            PlayerPrefs.Save();
             Debug.Log($"[Main Menu] Toggle DDA diubah secara manual menjadi: {isOn}");
         }
 
