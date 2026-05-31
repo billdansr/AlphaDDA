@@ -113,7 +113,12 @@ namespace CongklakAI
             {
                 // DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
                 float exponent = -A * (winScore + X0) + Mathf.Log10(N_MAX / 2.0f);
-                exponent = Mathf.Min(exponent, 10f); // Safety clip
+                
+                // Prevent integer overflow when casting 10^exponent to int
+                // Mathf.Log10(int.MaxValue) is approx 9.33, but we only need N_MAX max anyway
+                float maxSafeExponent = Mathf.Log10((float)N_MAX);
+                exponent = Mathf.Min(exponent, maxSafeExponent); 
+                
                 numSims = Mathf.CeilToInt(Mathf.Pow(10f, exponent));
                 numSims = Mathf.Clamp(numSims, 1, N_MAX);
             }

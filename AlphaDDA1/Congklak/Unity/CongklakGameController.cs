@@ -121,6 +121,9 @@ namespace CongklakAI
             // Gunakan nilai override yang sudah ditentukan dari Main Menu atau hasil 'flip' sesi sebelumnya.
             isDDAEnabled = IsDDAEnabledOverride;
             
+            // Clear DDA's persistent win score queue from previous games/sessions
+            CongklakAI.AlphaDDA_MCTS.ResetDDA();
+            
             // Ambil pilihan mode game dari Main Menu
             isP2Human = IsP2HumanOverride;
 
