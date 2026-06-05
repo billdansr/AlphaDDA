@@ -424,7 +424,10 @@ namespace CongklakAI
 
                     yield return new WaitForSeconds(0.5f); // Cosmetic delay
                     if (aiMove != -1)
+                    {
+                        SetStatus($"AI (P{(game.currentPlayer == 1 ? "1" : "2")}) Moving...");
                         yield return StartCoroutine(ExecuteMove(aiMove));
+                    }
                     else
                         Debug.LogError("AI failed to return a valid move!");
                 }
@@ -459,7 +462,7 @@ namespace CongklakAI
                 if (gameOverDetailsText != null)
                 {
                     // P1 selalu Human (Opsi A), P2 selalu AI
-                    gameOverDetailsText.text = $"Skor Akhir\nP1 (Anda): {game.board[7]}  |  P2 (AI): {game.board[15]}\nTotal Turn: {turnCount}\nDDA Mode: {(isDDAEnabled ? "Aktif" : "Non-Aktif")}\nUrutan: Anda Jalan Pertama (P1)";
+                    gameOverDetailsText.text = $"Skor Akhir\nP1 (Anda): {game.board[7]}  |  P2 (AI): {game.board[15]}\nTotal Turn: {turnCount}\nUrutan: Anda Jalan Pertama (P1)";
                 }
                 
                 // Matikan tombol sementara agar data penelitian terupload aman ke Google Form!
