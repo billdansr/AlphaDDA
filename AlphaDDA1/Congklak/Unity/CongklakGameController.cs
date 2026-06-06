@@ -103,6 +103,7 @@ namespace CongklakAI
         private Vector3 shellBaseScale = Vector3.one;
         private GameObject[] selectionGlows;
         private bool isSyncingLogs = false;
+        private Coroutine statusAnimationCoroutine;
 
         void Start()
         {
@@ -382,23 +383,23 @@ namespace CongklakAI
             while (!game.CheckGameEnd())
             {
                 turnCount++;
+                bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
+                string playerLabel = GetFormattedPlayerLabel(game.currentPlayer, isHuman);
                 
                 // Cek apakah pemain saat ini punya langkah. Jika tidak, lompati giliran (Pass)
                 if (game.GetValidMoves().Count == 0)
                 {
-                    string skipper = game.currentPlayer == 1 ? "P1" : "P2";
-                    SetStatus($"{skipper} kosong, melompati giliran...");
+                    SetStatus($"{playerLabel} kosong, melompati giliran...");
                     game.currentPlayer *= -1;
                     yield return new WaitForSeconds(1.0f);
                     continue;
                 }
 
-                bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
                 int playerTag = game.currentPlayer;
 
                 if (isHuman)
                 {
-                    SetStatus($"P{(game.currentPlayer == 1 ? "1" : "2")} (Human) Turn");
+                    SetStatus($"{playerLabel} Turn");
                     pendingMove = -1;
                     isInteracting = true;
                     yield return new WaitUntil(() => pendingMove != -1);
@@ -406,11 +407,16 @@ namespace CongklakAI
                     // LOG HUMAN MOVE
                     LogMove(playerTag, pendingMove, 0, 0, game.board[7], game.board[15]);
                     
+                    SetStatus($"{playerLabel} Moving...");
                     yield return StartCoroutine(ExecuteMove(pendingMove));
                 }
                 else
                 {
-                    SetStatus($"AI (P{(game.currentPlayer == 1 ? "1" : "2")}) Thinking...");
+                    SetStatus($"{playerLabel} Thinking..."); // Log awal
+                    
+                    // Mulai animasi titik-titik
+                    if (statusAnimationCoroutine != null) StopCoroutine(statusAnimationCoroutine);
+                    statusAnimationCoroutine = StartCoroutine(AnimateThinkingStatus($"{playerLabel} Thinking"));
 
                     int aiMove = -1;
                     float activeSensitivity = isDDAEnabled ? sensitivityA : 0.0f;
@@ -419,13 +425,17 @@ namespace CongklakAI
                     // Run MCTS on main thread via Coroutine (Inference safe)
                     yield return StartCoroutine(mcts.RunCoroutine(turnCount, (move) => aiMove = move));
 
+                    // Hentikan animasi setelah berpikir selesai
+                    if (statusAnimationCoroutine != null) StopCoroutine(statusAnimationCoroutine);
+                    statusAnimationCoroutine = null;
+
                     // LOG AI MOVE (Capture DDA Metrics)
                     LogMove(playerTag, aiMove, mcts.lastV, mcts.lastSims, game.board[7], game.board[15]);
 
                     yield return new WaitForSeconds(0.5f); // Cosmetic delay
                     if (aiMove != -1)
                     {
-                        SetStatus($"AI (P{(game.currentPlayer == 1 ? "1" : "2")}) Moving...");
+                        SetStatus($"{playerLabel} Moving...");
                         yield return StartCoroutine(ExecuteMove(aiMove));
                     }
                     else
@@ -435,7 +445,11 @@ namespace CongklakAI
                 yield return null;
             }
 
-            SetStatus($"Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
+            string winnerLabel = "Draw";
+            if (game.winner == 1) winnerLabel = $"<color=#{ColorUtility.ToHtmlStringRGB(p1GlowColor)}>P1</color>";
+            else if (game.winner == -1) winnerLabel = $"<color=#{ColorUtility.ToHtmlStringRGB(p2GlowColor)}>P2</color>";
+            
+            SetStatus($"Game Over! Winner: {winnerLabel}");
             Debug.Log($"[Game] Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
             
             // 1. Hentikan Musik Latar
@@ -647,8 +661,9 @@ namespace CongklakAI
 
         private IEnumerator AnimateCapture(int landingHoleIdx, GameObject lastDroppedShell)
         {
-            string playerName = game.currentPlayer == 1 ? "P1" : "P2";
-            SetStatus($"{playerName} CAPTURE! (Menembak lawan)");
+            bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
+            string playerLabel = GetFormattedPlayerLabel(game.currentPlayer, isHuman);
+            SetStatus($"{playerLabel} CAPTURE! (Menembak lawan)");
             
             // Tambahkan jeda awal agar pemain bisa melihat posisi jatuh terakhir
             yield return new WaitForSeconds(0.8f);
@@ -741,8 +756,9 @@ namespace CongklakAI
         {
             if (!isInitial)
             {
-                string playerName = game.currentPlayer == 1 ? "P1" : "P2";
-                SetStatus($"{playerName} JALAN TERUS!");
+                bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
+                string playerLabel = GetFormattedPlayerLabel(game.currentPlayer, isHuman);
+                SetStatus($"{playerLabel} JALAN TERUS!");
                 
                 // Jeda singkat agar transisi pengambilan biji tidak terlalu mendadak
                 yield return new WaitForSeconds(0.4f);
@@ -830,8 +846,48 @@ namespace CongklakAI
 
         private void SetStatus(string msg)
         {
+            if (statusText != null)
+            {
+                statusText.text = msg;
+                statusText.color = Color.white; // Reset warna dasar agar Rich Text bekerja
+            }
             Debug.Log($"[Game] {msg}");
-            if (statusText != null) statusText.text = msg;
+        }
+
+        /// <summary>
+        /// Animasi teks titik-titik (loading) agar UI terasa hidup saat proses berat.
+        /// </summary>
+        private IEnumerator AnimateThinkingStatus(string baseText)
+        {
+            // Menggunakan Rich Text tag <color=#00000000> (alpha 0) 
+            // Agar lebar teks "Thinking..." selalu tetap 3 titik.
+            // Ini mencegah teks bergoyang/geser saat alignment-nya Center.
+            string[] dotSequences = { 
+                ".<color=#00000000>..</color>", 
+                "..<color=#00000000>.</color>", 
+                "..." 
+            };
+            int dotCount = 1;
+            
+            while (true)
+            {
+                if (statusText != null) 
+                    statusText.text = baseText + dotSequences[dotCount - 1];
+                
+                dotCount = (dotCount % 3) + 1;
+                yield return new WaitForSeconds(0.4f);
+            }
+        }
+
+        /// <summary>
+        /// Membuat label pemain dengan pewarnaan Rich Text khusus pada bagian "P1" atau "P2".
+        /// </summary>
+        private string GetFormattedPlayerLabel(int player, bool isHuman)
+        {
+            Color col = (player == 1) ? p1GlowColor : p2GlowColor;
+            string hex = ColorUtility.ToHtmlStringRGB(col);
+            string role = isHuman ? "Human" : "AI";
+            return $"<color=#{hex}>P{(player == 1 ? "1" : "2")}</color> ({role})";
         }
 
         private void UpdateHighlights()

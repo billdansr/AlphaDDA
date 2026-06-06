@@ -128,11 +128,23 @@ namespace CongklakAI
             this.lastSims = numSims;
 
             Debug.Log($"[AlphaDDA] v_raw={v_root:F3}, v_avg={winScore:F3} -> Sims: {numSims} (isDDA={!Mathf.Approximately(A, 0.0f)})");
+            
+            // Gunakan Stopwatch untuk mengukur beban kerja CPU per frame
+            System.Diagnostics.Stopwatch frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             // 2. MCTS Logic
             for (int i = 0; i < numSims; i++)
             {
                 MCTSNode node = root;
+                
+                // Periksa apakah kalkulasi di frame ini sudah terlalu lama
+                // Batas 5-8ms adalah ideal agar sisa waktu frame bisa digunakan OS untuk mendinginkan CPU
+                if (frameStopwatch.ElapsedMilliseconds > 7) 
+                {
+                    // Jeda nyata (bukan cuma null) memberikan kesempatan CPU core untuk idle/turun frekuensi
+                    yield return new WaitForSeconds(0.02f); 
+                    frameStopwatch.Restart();
+                }
                 
                 // Selection phase: crawl down the tree using PUCT
                 while (node.children.Count > 0 && !node.terminal)
@@ -157,9 +169,6 @@ namespace CongklakAI
 
                 // Backpropagation
                 Backpropagate(node, v);
-
-                // Time-slicing: yield every 20 simulations to keep the UI responsive
-                if (i % 20 == 0) yield return null;
             }
 
             onComplete(DecideMove(turnCount));
