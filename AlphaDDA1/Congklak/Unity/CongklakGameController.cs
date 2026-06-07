@@ -470,6 +470,11 @@ namespace CongklakAI
         /// </summary>
         public void RestartGame()
         {
+            if (settings != null)
+            {
+                settings.FlipDDA();
+            }
+
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
@@ -478,6 +483,11 @@ namespace CongklakAI
         /// </summary>
         public void BackToMainMenu()
         {
+            if (settings != null)
+            {
+                settings.FlipDDA();
+            }
+
             settings.SaveToPrefs();
 
             SceneManager.LoadScene(mainMenuSceneName);
