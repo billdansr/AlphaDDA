@@ -458,7 +458,18 @@ namespace CongklakAI
                 
                 if (gameOverWinnerText != null)
                 {
-                    gameOverWinnerText.text = humanWon ? settings.termVictory : settings.termDefeat;
+                    if (game.winner == 0)
+                    {
+                        gameOverWinnerText.text = settings.termDraw;
+                    }
+                    else if (isP2Human)
+                    {
+                        gameOverWinnerText.text = $"Selamat! {GetFormattedPlayerLabel(game.winner)} Menang!";
+                    }
+                    else
+                    {
+                        gameOverWinnerText.text = humanWon ? settings.termVictory : settings.termDefeat;
+                    }
                 }
                 
                 if (gameOverDetailsText != null)
