@@ -92,6 +92,7 @@ namespace CongklakAI
         {
             settings.isMusicEnabled = isOn;
             settings.SaveToPrefs();
+            GlobalMusicPlayer.Refresh();
             Debug.Log($"[Main Menu] Musik diubah menjadi: {isOn}");
         }
 

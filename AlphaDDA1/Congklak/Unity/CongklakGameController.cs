@@ -131,6 +131,9 @@ namespace CongklakAI
             isDDAEnabled = settings.isDDAEnabled;
             isP2Human = settings.isP2Human;
             
+            if (audioSource != null) audioSource.volume = settings.sfxVolume;
+            if (musicSource != null) musicSource.volume = settings.musicVolume;
+
             // Clear DDA's persistent win score queue from previous games/sessions
             CongklakAI.AlphaDDA_MCTS.ResetDDA();
 
@@ -156,28 +159,6 @@ namespace CongklakAI
             UpdateUI(); 
             AlignUIToWorld(); // Snap UI to the sprites
             
-            // Inisialisasi dan putar musik latar
-            if (musicSource != null)
-            {
-                if (settings.isMusicEnabled && bgMusic != null)
-                {
-                    if (musicSource.clip != bgMusic)
-                    {
-                        musicSource.clip = bgMusic;
-                        musicSource.loop = true;
-                        musicSource.Play();
-                    }
-                    else if (!musicSource.isPlaying)
-                    {
-                        musicSource.Play();
-                    }
-                }
-                else
-                {
-                    musicSource.Stop();
-                }
-            }
-
             if (handShellCounterText != null)
             {
                 handShellCounterText.gameObject.SetActive(false); // Hide initially
@@ -468,9 +449,6 @@ namespace CongklakAI
             
             SetStatus($"Permainan Selesai! Pemenang: {winnerLabel}");
             Debug.Log($"[Game] Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
-            
-            // 1. Hentikan Musik Latar
-            if (musicSource != null) musicSource.Stop();
             
             // 2. Tentukan Pemenang dan mainkan SFX kemenangan/kekalahan
             bool humanWon = (game.winner == 1 && isP1Human) || (game.winner == -1 && isP2Human);
