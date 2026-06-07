@@ -111,11 +111,11 @@ namespace CongklakAI
             }
             else
             {
-                // DDA: Paper's exact formula (Fujita, 2022): 10^(-A(v + B) + log10(Nmax/2))
-                float exponent = -A * (winScore + X0) + Mathf.Log10(N_MAX / 2.0f);
+                // DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
+                // Synced with Python AlphaDDA1.py: exponent = -A * (win_score + X0)
+                float exponent = -A * (winScore + X0);
                 
                 // Prevent integer overflow when casting 10^exponent to int
-                // Mathf.Log10(int.MaxValue) is approx 9.33, but we only need N_MAX max anyway
                 float maxSafeExponent = Mathf.Log10((float)N_MAX);
                 exponent = Mathf.Min(exponent, maxSafeExponent); 
                 
