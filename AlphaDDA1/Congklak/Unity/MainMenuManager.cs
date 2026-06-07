@@ -8,42 +8,46 @@ namespace CongklakAI
     public class MainMenuManager : MonoBehaviour
     {
         [Header("UI References")]
+        public GameSettings settings; // Drag SO ke sini
+
         public TMP_InputField nameInputField;
         public Toggle ddaToggle;
+        public Toggle musicToggle;
         public Button playVsAIButton;
         public Button playVsHumanButton;
 
         [Header("Scene Configuration")]
         public string gameSceneName = "Game"; // Nama scene game Anda
 
-        public const string PLAYER_PREFS_NAME_KEY = "ParticipantName";
-        public const string PLAYER_PREFS_DDA_KEY = "DDAEnabled";
-
         void Start()
         {
-            // 1. Ambil nama terakhir dari PlayerPrefs (Pre-filled)
-            string savedName = PlayerPrefs.GetString(PLAYER_PREFS_NAME_KEY, "");
+            if (settings == null) return;
+            settings.LoadFromPrefs();
+
             if (nameInputField != null)
             {
-                nameInputField.text = savedName;
-                // Gunakan onEndEdit agar tidak mengganggu saat sedang mengetik (mencegah flickering)
+                nameInputField.text = settings.participantName;
                 nameInputField.onEndEdit.AddListener(OnNameValueChanged);
             }
 
-            // 2. Ambil state DDA terakhir dari PlayerPrefs
-            bool savedDDA = PlayerPrefs.GetInt(PLAYER_PREFS_DDA_KEY, 1) == 1;
             if (ddaToggle != null)
             {
-                ddaToggle.isOn = savedDDA;
+                ddaToggle.isOn = settings.isDDAEnabled;
                 ddaToggle.onValueChanged.AddListener(OnDDAToggledManually);
             }
 
-            // 3. Daftarkan event tombol Play
+            if (musicToggle != null)
+            {
+                musicToggle.isOn = settings.isMusicEnabled;
+                musicToggle.onValueChanged.AddListener(OnMusicToggled);
+            }
+
+            // Daftarkan event tombol Play via kode (lebih aman daripada manual di Inspector)
             if (playVsAIButton != null)
-                playVsAIButton.onClick.AddListener(() => StartGame(false)); // vs AI
+                playVsAIButton.onClick.AddListener(() => StartGame(false));
 
             if (playVsHumanButton != null)
-                playVsHumanButton.onClick.AddListener(() => StartGame(true));  // vs Human
+                playVsHumanButton.onClick.AddListener(() => StartGame(true));
         }
 
         /// <summary>
@@ -76,10 +80,19 @@ namespace CongklakAI
         /// </summary>
         private void OnDDAToggledManually(bool isOn)
         {
-            // Simpan perubahan manual segera agar persisten
-            PlayerPrefs.SetInt(PLAYER_PREFS_DDA_KEY, isOn ? 1 : 0);
-            PlayerPrefs.Save();
+            settings.isDDAEnabled = isOn;
+            settings.SaveToPrefs();
             Debug.Log($"[Main Menu] Toggle DDA diubah secara manual menjadi: {isOn}");
+        }
+
+        /// <summary>
+        /// Dipanggil ketika partisipan mengubah Toggle Musik secara manual.
+        /// </summary>
+        private void OnMusicToggled(bool isOn)
+        {
+            settings.isMusicEnabled = isOn;
+            settings.SaveToPrefs();
+            Debug.Log($"[Main Menu] Musik diubah menjadi: {isOn}");
         }
 
         /// <summary>
@@ -87,31 +100,12 @@ namespace CongklakAI
         /// </summary>
         public void StartGame(bool playVsHuman)
         {
-            string name = "Guest";
-            if (nameInputField != null && !string.IsNullOrEmpty(nameInputField.text))
-            {
-                name = nameInputField.text.Trim();
-            }
+            if (nameInputField != null)
+                settings.participantName = nameInputField.text.Trim();
 
-            bool ddaEnabled = true;
-            if (ddaToggle != null)
-            {
-                ddaEnabled = ddaToggle.isOn;
-            }
+            settings.isP2Human = playVsHuman;
+            settings.SaveToPrefs();
 
-            // 1. Simpan ke PlayerPrefs agar persisten di session berikutnya
-            PlayerPrefs.SetString(PLAYER_PREFS_NAME_KEY, name);
-            PlayerPrefs.SetInt(PLAYER_PREFS_DDA_KEY, ddaEnabled ? 1 : 0);
-            PlayerPrefs.Save();
-
-            // 2. Set static overrides ke GameController agar terbaca saat scene berpindah
-            CongklakGameController.ParticipantNameOverride = name;
-            CongklakGameController.IsDDAEnabledOverride = ddaEnabled;
-            CongklakGameController.IsP2HumanOverride = playVsHuman;
-
-            Debug.Log($"[Main Menu] Memulai game. Partisipan: {name} | DDA: {ddaEnabled} | vs Human: {playVsHuman}");
-
-            // 3. Pindah Scene
             SceneManager.LoadScene(gameSceneName);
         }
     }

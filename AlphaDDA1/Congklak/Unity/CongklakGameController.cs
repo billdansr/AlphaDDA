@@ -12,14 +12,13 @@ namespace CongklakAI
     public class CongklakGameController : MonoBehaviour
     {
         #region 1. Configuration & Parameters
+        public GameSettings settings; // Drag SO ke sini
+
         [Header("AI Configuration")]
         public AIBrain aiBrain;
         public bool isP1Human = true;
         public bool isP2Human = false;
 
-        // Static variable untuk menampung pilihan dari Main Menu
-        public static bool IsP2HumanOverride = false;
-        
         [Header("Difficulty Parameters")]
         public float sensitivityA = 1.0f; // Calibrated Golden Parameter (A=1.0)
         public float offsetX0 = -2.0f;    // Calibrated Golden Parameter (X0=-2.0)
@@ -45,11 +44,9 @@ namespace CongklakAI
         public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
 
         public string participantName = "Guest";
-        public static string ParticipantNameOverride = "Guest";
 
         [Header("DDA Settings")]
         public bool isDDAEnabled = true;
-        public static bool IsDDAEnabledOverride = true;
 
         [Header("Google Form Configuration")]
         public string gFormUrl = "https://docs.google.com/forms/d/e/.../formResponse";
@@ -104,6 +101,7 @@ namespace CongklakAI
         private GameObject[] selectionGlows;
         private bool isSyncingLogs = false;
         private Coroutine statusAnimationCoroutine;
+        private Coroutine handTextPunchCoroutine;
 
         void Start()
         {
@@ -112,21 +110,29 @@ namespace CongklakAI
 
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             
-            // Ambil nama dari override (Main Menu) atau fallback ke PlayerPrefs jika scene dijalankan langsung
-            participantName = ParticipantNameOverride;
-            if (participantName == "Guest" || string.IsNullOrEmpty(participantName))
+            // Lokalisasi teks tombol secara dinamis untuk konsistensi bahasa
+            if (playAgainButton != null)
             {
-                participantName = PlayerPrefs.GetString(MainMenuManager.PLAYER_PREFS_NAME_KEY, "Guest");
+                var btnText = playAgainButton.GetComponentInChildren<TMP_Text>();
+                if (btnText != null) btnText.text = "Main Lagi";
             }
-            
-            // Gunakan nilai override yang sudah ditentukan dari Main Menu atau hasil 'flip' sesi sebelumnya.
-            isDDAEnabled = IsDDAEnabledOverride;
+
+            if (mainMenuButton != null)
+            {
+                var btnText = mainMenuButton.GetComponentInChildren<TMP_Text>();
+                if (btnText != null) btnText.text = "Menu Utama";
+            }
+
+            // Sinkronisasi data dari Singleton GameSettings
+            if (settings == null) return;
+            participantName = string.IsNullOrEmpty(settings.participantName) 
+                ? "Guest" 
+                : settings.participantName;
+            isDDAEnabled = settings.isDDAEnabled;
+            isP2Human = settings.isP2Human;
             
             // Clear DDA's persistent win score queue from previous games/sessions
             CongklakAI.AlphaDDA_MCTS.ResetDDA();
-            
-            // Ambil pilihan mode game dari Main Menu
-            isP2Human = IsP2HumanOverride;
 
             // Inisialisasi list untuk menampung objek shell di setiap lubang
             holeShells = new List<GameObject>[16];
@@ -151,15 +157,25 @@ namespace CongklakAI
             AlignUIToWorld(); // Snap UI to the sprites
             
             // Inisialisasi dan putar musik latar
-            if (musicSource != null && bgMusic != null && musicSource.clip != bgMusic)
+            if (musicSource != null)
             {
-                musicSource.clip = bgMusic;
-                musicSource.loop = true;
-                musicSource.Play();
-            }
-            else if (musicSource != null && !musicSource.isPlaying)
-            {
-                musicSource.Play();
+                if (settings.isMusicEnabled && bgMusic != null)
+                {
+                    if (musicSource.clip != bgMusic)
+                    {
+                        musicSource.clip = bgMusic;
+                        musicSource.loop = true;
+                        musicSource.Play();
+                    }
+                    else if (!musicSource.isPlaying)
+                    {
+                        musicSource.Play();
+                    }
+                }
+                else
+                {
+                    musicSource.Stop();
+                }
             }
 
             if (handShellCounterText != null)
@@ -181,7 +197,6 @@ namespace CongklakAI
             // Kontrol Eksperimen: Manusia selalu P1 untuk menstandarisasi giliran pertama.
             // Ini mencegah 'first-mover advantage' menjadi variabel pengganggu dalam analisis DDA.
             isP1Human = true;
-            isP2Human = IsP2HumanOverride; 
 
             // Mulai pencatatan waktu sesi
             gameStartTime = Time.time;
@@ -309,7 +324,8 @@ namespace CongklakAI
         public void ToggleDDAManually()
         {
             isDDAEnabled = !isDDAEnabled;
-            IsDDAEnabledOverride = isDDAEnabled; // Sinkronkan ke override agar alur restart tetap konsisten
+            settings.isDDAEnabled = isDDAEnabled;
+            settings.SaveToPrefs();
             Debug.Log($"[Logger] DDA secara manual diubah menjadi: {isDDAEnabled}");
             SetStatus($"DDA {(isDDAEnabled ? "AKTIF" : "NON-AKTIF")} (Manual)");
         }
@@ -321,7 +337,8 @@ namespace CongklakAI
         public void SetDDAGameToggle(bool isEnabled)
         {
             isDDAEnabled = isEnabled;
-            IsDDAEnabledOverride = isEnabled; // Sinkronkan agar flip di akhir game merujuk pada state terakhir
+            settings.isDDAEnabled = isEnabled;
+            settings.SaveToPrefs();
             Debug.Log($"[Settings] DDA diubah lewat UI menjadi: {isEnabled}");
             SetStatus($"DDA {(isEnabled ? "AKTIF" : "NON-AKTIF")}");
         }
@@ -384,7 +401,7 @@ namespace CongklakAI
             {
                 turnCount++;
                 bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
-                string playerLabel = GetFormattedPlayerLabel(game.currentPlayer, isHuman);
+                string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
                 
                 // Cek apakah pemain saat ini punya langkah. Jika tidak, lompati giliran (Pass)
                 if (game.GetValidMoves().Count == 0)
@@ -399,7 +416,7 @@ namespace CongklakAI
 
                 if (isHuman)
                 {
-                    SetStatus($"{playerLabel} Turn");
+                    SetStatus($"Giliran {playerLabel}");
                     pendingMove = -1;
                     isInteracting = true;
                     yield return new WaitUntil(() => pendingMove != -1);
@@ -407,16 +424,16 @@ namespace CongklakAI
                     // LOG HUMAN MOVE
                     LogMove(playerTag, pendingMove, 0, 0, game.board[7], game.board[15]);
                     
-                    SetStatus($"{playerLabel} Moving...");
+                    SetStatus($"{playerLabel} Berjalan");
                     yield return StartCoroutine(ExecuteMove(pendingMove));
                 }
                 else
                 {
-                    SetStatus($"{playerLabel} Thinking..."); // Log awal
+                    SetStatus($"{playerLabel} Berpikir..."); // Log awal
                     
                     // Mulai animasi titik-titik
                     if (statusAnimationCoroutine != null) StopCoroutine(statusAnimationCoroutine);
-                    statusAnimationCoroutine = StartCoroutine(AnimateThinkingStatus($"{playerLabel} Thinking"));
+                    statusAnimationCoroutine = StartCoroutine(AnimateThinkingStatus($"{playerLabel} Berpikir"));
 
                     int aiMove = -1;
                     float activeSensitivity = isDDAEnabled ? sensitivityA : 0.0f;
@@ -435,7 +452,7 @@ namespace CongklakAI
                     yield return new WaitForSeconds(0.5f); // Cosmetic delay
                     if (aiMove != -1)
                     {
-                        SetStatus($"{playerLabel} Moving...");
+                        SetStatus($"{playerLabel} Berjalan");
                         yield return StartCoroutine(ExecuteMove(aiMove));
                     }
                     else
@@ -445,11 +462,11 @@ namespace CongklakAI
                 yield return null;
             }
 
-            string winnerLabel = "Draw";
-            if (game.winner == 1) winnerLabel = $"<color=#{ColorUtility.ToHtmlStringRGB(p1GlowColor)}>P1</color>";
-            else if (game.winner == -1) winnerLabel = $"<color=#{ColorUtility.ToHtmlStringRGB(p2GlowColor)}>P2</color>";
+            string winnerLabel = "Seri";
+            if (game.winner != 0)
+                winnerLabel = GetFormattedPlayerLabel(game.winner);
             
-            SetStatus($"Game Over! Winner: {winnerLabel}");
+            SetStatus($"Permainan Selesai! Pemenang: {winnerLabel}");
             Debug.Log($"[Game] Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
             
             // 1. Hentikan Musik Latar
@@ -470,13 +487,13 @@ namespace CongklakAI
                 
                 if (gameOverWinnerText != null)
                 {
-                    gameOverWinnerText.text = humanWon ? "Selamat, Anda Menang!" : "AI Menang! Tetap Semangat!";
+                    gameOverWinnerText.text = humanWon ? "Mantap! Kamu Juaranya! 🎉" : "Yah, AI lebih jago kali ini! Semangat!";
                 }
                 
                 if (gameOverDetailsText != null)
                 {
                     // P1 selalu Human (Opsi A), P2 selalu AI
-                    gameOverDetailsText.text = $"Skor Akhir\nP1 (Anda): {game.board[7]}  |  P2 (AI): {game.board[15]}\nTotal Turn: {turnCount}\nUrutan: Anda Jalan Pertama (P1)";
+                    gameOverDetailsText.text = $"Skor Akhir\nP1: {game.board[7]}  |  P2: {game.board[15]}\nTotal Giliran: {turnCount}\nKeterangan: Kamu jalan pertama (P1)";
                 }
                 
                 // Matikan tombol sementara agar data penelitian terupload aman ke Google Form!
@@ -494,12 +511,7 @@ namespace CongklakAI
         /// </summary>
         public void RestartGame()
         {
-            // Balik (flip) status DDA secara otomatis untuk sesi bermain berikutnya (Within-Subjects Design)
-            IsDDAEnabledOverride = !IsDDAEnabledOverride;
-            Debug.Log($"[Game] Restarting Game. DDA otomatis di-flip menjadi: {IsDDAEnabledOverride}");
-            PlayerPrefs.SetInt(MainMenuManager.PLAYER_PREFS_DDA_KEY, IsDDAEnabledOverride ? 1 : 0);
-            PlayerPrefs.SetString(MainMenuManager.PLAYER_PREFS_NAME_KEY, participantName);
-            PlayerPrefs.Save();
+            settings.FlipDDA();
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
@@ -508,12 +520,8 @@ namespace CongklakAI
         /// </summary>
         public void BackToMainMenu()
         {
-            // Balik (flip) status DDA agar saat kembali ke Main Menu, urutan eksperimen tetap berlanjut
-            // Ini memastikan sesi berikutnya (saat klik Play lagi) menggunakan mode yang berbeda
-            IsDDAEnabledOverride = !IsDDAEnabledOverride;
-            PlayerPrefs.SetInt(MainMenuManager.PLAYER_PREFS_DDA_KEY, IsDDAEnabledOverride ? 1 : 0);
-            PlayerPrefs.SetString(MainMenuManager.PLAYER_PREFS_NAME_KEY, participantName);
-            PlayerPrefs.Save();
+            settings.FlipDDA();
+            settings.SaveToPrefs();
 
             SceneManager.LoadScene(mainMenuSceneName);
         }
@@ -561,8 +569,12 @@ namespace CongklakAI
 
             if (handShellCounterText != null)
             {
+                handShellCounterText.color = (game.currentPlayer == 1) ? p1GlowColor : p2GlowColor;
                 handShellCounterText.text = initialShells.ToString();
                 handShellCounterText.gameObject.SetActive(true);
+
+                if (handTextPunchCoroutine != null) StopCoroutine(handTextPunchCoroutine);
+                handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handShellCounterText.transform));
             }
 
             yield return StartCoroutine(AnimatePickup(startHole, handShell, true));
@@ -597,6 +609,8 @@ namespace CongklakAI
                         if (handShellCounterText != null)
                         {
                             handShellCounterText.text = remainingShells.ToString();
+                            if (handTextPunchCoroutine != null) StopCoroutine(handTextPunchCoroutine);
+                            handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handShellCounterText.transform));
                         }
                     }
 
@@ -644,6 +658,8 @@ namespace CongklakAI
                 if (handShellCounterText != null)
                 {
                     handShellCounterText.text = remainingShells.ToString();
+                    if (handTextPunchCoroutine != null) StopCoroutine(handTextPunchCoroutine);
+                    handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handShellCounterText.transform));
                 }
 
                 yield return new WaitForSeconds(stepDelay);
@@ -661,9 +677,8 @@ namespace CongklakAI
 
         private IEnumerator AnimateCapture(int landingHoleIdx, GameObject lastDroppedShell)
         {
-            bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
-            string playerLabel = GetFormattedPlayerLabel(game.currentPlayer, isHuman);
-            SetStatus($"{playerLabel} CAPTURE! (Menembak lawan)");
+            string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
+            SetStatus($"{playerLabel} TEMBAK!");
             
             // Tambahkan jeda awal agar pemain bisa melihat posisi jatuh terakhir
             yield return new WaitForSeconds(0.8f);
@@ -756,8 +771,7 @@ namespace CongklakAI
         {
             if (!isInitial)
             {
-                bool isHuman = (game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human);
-                string playerLabel = GetFormattedPlayerLabel(game.currentPlayer, isHuman);
+                string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
                 SetStatus($"{playerLabel} JALAN TERUS!");
                 
                 // Jeda singkat agar transisi pengambilan biji tidak terlalu mendadak
@@ -880,14 +894,41 @@ namespace CongklakAI
         }
 
         /// <summary>
+        /// Memberikan efek 'Juice' berupa perubahan skala mendadak pada teks UI.
+        /// </summary>
+        private IEnumerator AnimatePunchScale(Transform target)
+        {
+            float duration = 0.15f;
+            Vector3 punchScale = Vector3.one * 1.4f;
+            float elapsed = 0;
+
+            // Scale Up (Cepat)
+            while (elapsed < duration * 0.3f)
+            {
+                target.localScale = Vector3.Lerp(Vector3.one, punchScale, elapsed / (duration * 0.3f));
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+            // Scale Down (Meredam)
+            elapsed = 0;
+            while (elapsed < duration * 0.7f)
+            {
+                target.localScale = Vector3.Lerp(punchScale, Vector3.one, elapsed / (duration * 0.7f));
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+            target.localScale = Vector3.one;
+            handTextPunchCoroutine = null;
+        }
+
+        /// <summary>
         /// Membuat label pemain dengan pewarnaan Rich Text khusus pada bagian "P1" atau "P2".
         /// </summary>
-        private string GetFormattedPlayerLabel(int player, bool isHuman)
+        private string GetFormattedPlayerLabel(int player)
         {
             Color col = (player == 1) ? p1GlowColor : p2GlowColor;
             string hex = ColorUtility.ToHtmlStringRGB(col);
-            string role = isHuman ? "Human" : "AI";
-            return $"<color=#{hex}>P{(player == 1 ? "1" : "2")}</color> ({role})";
+            return $"<color=#{hex}>P{(player == 1 ? "1" : "2")}</color>";
         }
 
         private void UpdateHighlights()
