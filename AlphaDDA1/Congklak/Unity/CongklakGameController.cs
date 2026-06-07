@@ -70,12 +70,6 @@ namespace CongklakAI
 
         [Header("Audio Settings")]
         public AudioSource audioSource;
-        public AudioSource musicSource;
-        public AudioClip swooshSound;
-        public AudioClip dropSound;
-        public AudioClip bgMusic;
-        public AudioClip victorySound;
-        public AudioClip defeatSound;
 
         [Header("Glow Aesthetics")]
         public Color p1GlowColor = Color.red;
@@ -132,7 +126,6 @@ namespace CongklakAI
             isP2Human = settings.isP2Human;
             
             if (audioSource != null) audioSource.volume = settings.sfxVolume;
-            if (musicSource != null) musicSource.volume = settings.musicVolume;
 
             // Clear DDA's persistent win score queue from previous games/sessions
             CongklakAI.AlphaDDA_MCTS.ResetDDA();
@@ -410,11 +403,11 @@ namespace CongklakAI
                 }
                 else
                 {
-                    SetStatus($"{playerLabel} Berpikir..."); // Log awal
+                    SetStatus($"{playerLabel} {settings.termThinking}..."); // Log awal
                     
                     // Mulai animasi titik-titik
                     if (statusAnimationCoroutine != null) StopCoroutine(statusAnimationCoroutine);
-                    statusAnimationCoroutine = StartCoroutine(AnimateThinkingStatus($"{playerLabel} Berpikir"));
+                    statusAnimationCoroutine = StartCoroutine(AnimateThinkingStatus($"{playerLabel} {settings.termThinking}"));
 
                     int aiMove = -1;
                     float activeSensitivity = isDDAEnabled ? sensitivityA : 0.0f;
@@ -443,7 +436,7 @@ namespace CongklakAI
                 yield return null;
             }
 
-            string winnerLabel = "Seri";
+            string winnerLabel = settings.termDraw;
             if (game.winner != 0)
                 winnerLabel = GetFormattedPlayerLabel(game.winner);
             
@@ -452,10 +445,10 @@ namespace CongklakAI
             
             // 2. Tentukan Pemenang dan mainkan SFX kemenangan/kekalahan
             bool humanWon = (game.winner == 1 && isP1Human) || (game.winner == -1 && isP2Human);
-            if (audioSource != null)
+            if (audioSource != null && settings != null)
             {
-                AudioClip clip = humanWon ? victorySound : defeatSound;
-                if (clip != null) audioSource.PlayOneShot(clip);
+                AudioClip clip = humanWon ? settings.victorySound : settings.defeatSound;
+                if (clip != null) audioSource.PlayOneShot(clip, settings.sfxVolume);
             }
 
             // 3. Tampilkan UI Panel Game Over
@@ -465,7 +458,7 @@ namespace CongklakAI
                 
                 if (gameOverWinnerText != null)
                 {
-                    gameOverWinnerText.text = humanWon ? "Mantap! Kamu Juaranya! 🎉" : "Yah, AI lebih jago kali ini! Semangat!";
+                    gameOverWinnerText.text = humanWon ? settings.termVictory : settings.termDefeat;
                 }
                 
                 if (gameOverDetailsText != null)
@@ -626,8 +619,8 @@ namespace CongklakAI
                     }
                 }
                 
-                if (audioSource != null && dropSound != null)
-                    audioSource.PlayOneShot(dropSound);
+                if (audioSource != null && settings != null && settings.dropSound != null)
+                    audioSource.PlayOneShot(settings.dropSound, settings.sfxVolume);
 
                 UpdateAllHoleVisuals();
                 UpdateUI();
@@ -656,7 +649,7 @@ namespace CongklakAI
         private IEnumerator AnimateCapture(int landingHoleIdx, GameObject lastDroppedShell)
         {
             string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
-            SetStatus($"{playerLabel} TEMBAK!");
+            SetStatus($"{playerLabel} {settings.termCapture}!");
             
             // Tambahkan jeda awal agar pemain bisa melihat posisi jatuh terakhir
             yield return new WaitForSeconds(0.8f);
@@ -694,8 +687,8 @@ namespace CongklakAI
             if (capturedObjects.Count == 0) yield break;
 
             // Play swoosh sound when moving captured shells to hand
-            if (audioSource != null && swooshSound != null)
-                audioSource.PlayOneShot(swooshSound);
+            if (audioSource != null && settings != null && settings.swooshSound != null)
+                audioSource.PlayOneShot(settings.swooshSound, settings.sfxVolume);
 
             // 2. Animasi ke Tangan (Hand Target)
             float duration = handTravelDuration;
@@ -738,8 +731,8 @@ namespace CongklakAI
             foreach (var obj in capturedObjects) Destroy(obj);
             
             // Mainkan suara klik saat kumpulan biji masuk ke lumbung
-            if (audioSource != null && dropSound != null)
-                audioSource.PlayOneShot(dropSound);
+            if (audioSource != null && settings != null && settings.dropSound != null)
+                audioSource.PlayOneShot(settings.dropSound, settings.sfxVolume);
 
             UpdateAllHoleVisuals();
             UpdateUI();
@@ -750,7 +743,7 @@ namespace CongklakAI
             if (!isInitial)
             {
                 string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
-                SetStatus($"{playerLabel} JALAN TERUS!");
+                SetStatus($"{playerLabel} {settings.termContinue}!");
                 
                 // Jeda singkat agar transisi pengambilan biji tidak terlalu mendadak
                 yield return new WaitForSeconds(0.4f);
@@ -767,8 +760,8 @@ namespace CongklakAI
             if (pickedObjects.Count == 0) yield break;
 
             // Play swoosh sound when picking up shells
-            if (audioSource != null && swooshSound != null)
-                audioSource.PlayOneShot(swooshSound);
+            if (audioSource != null && settings != null && settings.swooshSound != null)
+                audioSource.PlayOneShot(settings.swooshSound, settings.sfxVolume);
 
             // 2. Animasi bergerak ke arah posisi tangan
             float duration = handTravelDuration;

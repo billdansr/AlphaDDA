@@ -6,17 +6,17 @@ namespace CongklakAI
     {
         public GameSettings settings;
         private AudioSource audioSource;
-        private static GlobalMusicPlayer instance;
+        public static GlobalMusicPlayer Instance { get; private set; }
 
         void Awake()
         {
             // Singleton Pattern: Memastikan hanya ada satu musik player di seluruh game
-            if (instance != null)
+            if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
                 return;
             }
-            instance = this;
+            Instance = this;
             DontDestroyOnLoad(gameObject);
 
             audioSource = gameObject.AddComponent<AudioSource>();
@@ -54,7 +54,7 @@ namespace CongklakAI
         // Memudahkan pemanggilan dari mana saja
         public static void Refresh()
         {
-            if (instance != null) instance.UpdateMusicState();
+            if (Instance != null) Instance.UpdateMusicState();
         }
     }
 }

@@ -13,17 +13,29 @@ namespace CongklakAI
         public float sfxVolume = 1.0f;   // Default maksimal
         public bool isP2Human = false;
 
+        [Header("UI Terminology")]
+        public string termCapture = "Makan!";
+        public string termContinue = "Jalan Terus!";
+        public string termThinking = "Berpikir";
+        public string termVictory = "Selamat! Anda Menang!";
+        public string termDefeat = "Permainan Selesai. Kemenangan untuk AI.";
+        public string termDraw = "Remis";
+
         [Header("Global Audio Assets")]
         public AudioClip backgroundMusic;
-
-        [Header("Global Audio Assets")]
         public AudioClip buttonClickSound;
 
-        private const string PREF_NAME = "Name";
-        private const string PREF_DDA = "DDA";
-        private const string PREF_MUSIC = "Music";
-        private const string PREF_MUSIC_VOL = "MusicVolume";
-        private const string PREF_SFX_VOL = "SFXVolume";
+        [Header("Gameplay SFX Assets")]
+        public AudioClip swooshSound;
+        public AudioClip dropSound;
+        public AudioClip victorySound;
+        public AudioClip defeatSound;
+
+        public const string PREF_NAME = "Name";
+        public const string PREF_DDA = "DDA";
+        public const string PREF_MUSIC = "Music";
+        public const string PREF_MUSIC_VOL = "MusicVolume";
+        public const string PREF_SFX_VOL = "SFXVolume";
 
         public void SaveToPrefs()
         {
