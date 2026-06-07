@@ -14,12 +14,24 @@ namespace CongklakAI
         public bool isP2Human = false;
 
         [Header("UI Terminology")]
+        public string termTurn = "Giliran";
+        public string termSkip = "kosong, melompati giliran...";
+        public string termMoving = "Berjalan";
         public string termCapture = "Makan!";
         public string termContinue = "Jalan Terus!";
         public string termThinking = "Berpikir";
+        public string termGameOver = "Permainan Selesai! Pemenang:";
         public string termVictory = "Selamat! Anda Menang!";
         public string termDefeat = "Permainan Selesai. Kemenangan untuk AI.";
         public string termDraw = "Remis";
+        public string termFinalScore = "Skor Akhir";
+        public string termTotalTurns = "Total Giliran";
+        public string termP1FirstInfo = "Keterangan: Kamu jalan pertama (P1)";
+        public string termSyncing = "Menyimpan data penelitian ke Cloud, mohon tunggu...";
+        public string termSyncDone = "Semua data berhasil disinkronkan!";
+        public string termSyncOffline = "Sinkronisasi terhenti. Sesi tersimpan lokal (Offline).";
+        public string termPlayAgain = "Main Lagi";
+        public string termMainMenu = "Menu Utama";
 
         [Header("Global Audio Assets")]
         public AudioClip backgroundMusic;

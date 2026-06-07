@@ -40,7 +40,7 @@ namespace CongklakAI
 
         [Header("Animation Settings")]
         public GameObject shellPrefab;   // Assign a small shell/circle prefab
-        public float shellMoveSpeed = 15f; // Speed of the shell moving between holes
+        public float shellMoveSpeed = 3f; // Speed of the shell moving between holes
         public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
 
         public string participantName = "Guest";
@@ -108,13 +108,13 @@ namespace CongklakAI
             if (playAgainButton != null)
             {
                 var btnText = playAgainButton.GetComponentInChildren<TMP_Text>();
-                if (btnText != null) btnText.text = "Main Lagi";
+                if (btnText != null && settings != null) btnText.text = settings.termPlayAgain;
             }
 
             if (mainMenuButton != null)
             {
                 var btnText = mainMenuButton.GetComponentInChildren<TMP_Text>();
-                if (btnText != null) btnText.text = "Menu Utama";
+                if (btnText != null && settings != null) btnText.text = settings.termMainMenu;
             }
 
             // Sinkronisasi data dari Singleton GameSettings
@@ -243,7 +243,7 @@ namespace CongklakAI
                     
                     lineCount++;
                     if (uploadStatusText != null) 
-                        uploadStatusText.text = $"Sinkronisasi ({pendingFiles.Length} file): {lineCount}/{lines.Length - 1}";
+                        uploadStatusText.text = $"{settings.termTurn} ({pendingFiles.Length} file): {lineCount}/{lines.Length - 1}";
                 }
 
                 // Pindahkan ke folder 'Uploaded' hanya jika file selesai diproses
@@ -252,13 +252,13 @@ namespace CongklakAI
                 System.IO.File.Move(file, destFile);
             }
 
-            if (uploadStatusText != null) uploadStatusText.text = "Semua data berhasil disinkronkan!";
+            if (uploadStatusText != null) uploadStatusText.text = settings.termSyncDone;
             
             // Jika masih ada file yang tersisa di folder pending (karena gagal upload di tengah jalan)
             int remaining = System.IO.Directory.GetFiles(pendingPath, "*.csv").Length;
             if (remaining > 0 && uploadStatusText != null)
             {
-                uploadStatusText.text = $"Sinkronisasi terhenti. {remaining} sesi tersimpan lokal (Offline).";
+                uploadStatusText.text = $"{settings.termSyncOffline} ({remaining} file)";
             }
             
             // Aktifkan kembali tombol navigasi
@@ -380,7 +380,7 @@ namespace CongklakAI
                 // Cek apakah pemain saat ini punya langkah. Jika tidak, lompati giliran (Pass)
                 if (game.GetValidMoves().Count == 0)
                 {
-                    SetStatus($"{playerLabel} kosong, melompati giliran...");
+                    SetStatus($"{playerLabel} {settings.termSkip}");
                     game.currentPlayer *= -1;
                     yield return new WaitForSeconds(1.0f);
                     continue;
@@ -390,7 +390,7 @@ namespace CongklakAI
 
                 if (isHuman)
                 {
-                    SetStatus($"Giliran {playerLabel}");
+                    SetStatus($"{settings.termTurn} {playerLabel}");
                     pendingMove = -1;
                     isInteracting = true;
                     yield return new WaitUntil(() => pendingMove != -1);
@@ -398,7 +398,7 @@ namespace CongklakAI
                     // LOG HUMAN MOVE
                     LogMove(playerTag, pendingMove, 0, 0, game.board[7], game.board[15]);
                     
-                    SetStatus($"{playerLabel} Berjalan");
+                    SetStatus($"{playerLabel} {settings.termMoving}");
                     yield return StartCoroutine(ExecuteMove(pendingMove));
                 }
                 else
@@ -426,7 +426,7 @@ namespace CongklakAI
                     yield return new WaitForSeconds(0.5f); // Cosmetic delay
                     if (aiMove != -1)
                     {
-                        SetStatus($"{playerLabel} Berjalan");
+                        SetStatus($"{playerLabel} {settings.termMoving}");
                         yield return StartCoroutine(ExecuteMove(aiMove));
                     }
                     else
@@ -440,7 +440,7 @@ namespace CongklakAI
             if (game.winner != 0)
                 winnerLabel = GetFormattedPlayerLabel(game.winner);
             
-            SetStatus($"Permainan Selesai! Pemenang: {winnerLabel}");
+            SetStatus($"{settings.termGameOver} {winnerLabel}");
             Debug.Log($"[Game] Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
             
             // 2. Tentukan Pemenang dan mainkan SFX kemenangan/kekalahan
@@ -475,13 +475,13 @@ namespace CongklakAI
                 if (gameOverDetailsText != null)
                 {
                     // P1 selalu Human (Opsi A), P2 selalu AI
-                    gameOverDetailsText.text = $"Skor Akhir\nP1: {game.board[7]}  |  P2: {game.board[15]}\nTotal Giliran: {turnCount}\nKeterangan: Kamu jalan pertama (P1)";
+                    gameOverDetailsText.text = $"{settings.termFinalScore}\nP1: {game.board[7]}  |  P2: {game.board[15]}\n{settings.termTotalTurns}: {turnCount}\n{settings.termP1FirstInfo}";
                 }
                 
                 // Matikan tombol sementara agar data penelitian terupload aman ke Google Form!
                 if (playAgainButton != null) playAgainButton.interactable = false;
                 if (mainMenuButton != null) mainMenuButton.interactable = false;
-                if (uploadStatusText != null) uploadStatusText.text = "Menyimpan data penelitian ke Cloud, mohon tunggu...";
+                if (uploadStatusText != null) uploadStatusText.text = settings.termSyncing;
             }
 
             // EXPORT DATA SETELAH SELESAI
@@ -660,7 +660,7 @@ namespace CongklakAI
         private IEnumerator AnimateCapture(int landingHoleIdx, GameObject lastDroppedShell)
         {
             string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
-            SetStatus($"{playerLabel} {settings.termCapture}!");
+            SetStatus($"{playerLabel} {settings.termCapture}");
             
             // Tambahkan jeda awal agar pemain bisa melihat posisi jatuh terakhir
             yield return new WaitForSeconds(0.8f);
@@ -754,7 +754,7 @@ namespace CongklakAI
             if (!isInitial)
             {
                 string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
-                SetStatus($"{playerLabel} {settings.termContinue}!");
+                SetStatus($"{playerLabel} {settings.termContinue}");
                 
                 // Jeda singkat agar transisi pengambilan biji tidak terlalu mendadak
                 yield return new WaitForSeconds(0.4f);
