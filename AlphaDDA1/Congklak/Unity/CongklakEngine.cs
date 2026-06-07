@@ -56,18 +56,8 @@ namespace CongklakAI
             bool p2Empty = true;
             for (int i = 8; i < 15; i++) if (board[i] > 0) { p2Empty = false; break; }
 
-            if (p1Empty || p2Empty)
+            if (p1Empty && p2Empty)
             {
-                // Sweep remaining shells to stores
-                if (p1Empty)
-                {
-                    for (int i = 8; i < 15; i++) { board[15] += board[i]; board[i] = 0; }
-                }
-                if (p2Empty)
-                {
-                    for (int i = 0; i < 7; i++) { board[7] += board[i]; board[i] = 0; }
-                }
-
                 if (board[7] > board[15]) winner = 1;
                 else if (board[15] > board[7]) winner = -1;
                 else winner = 0; // Draw

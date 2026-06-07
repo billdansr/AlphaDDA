@@ -46,10 +46,17 @@ class Minimax:
         temp_g.board = node.Get_state()
         temp_g.current_player = node.Get_player()
         valid_moves = temp_g.Get_valid_moves()
+        
+        moving_player = node.Get_player()
+        if len(valid_moves) == 0 and not temp_g.Check_game_end():
+            temp_g.current_player *= -1
+            valid_moves = temp_g.Get_valid_moves()
+            moving_player = temp_g.current_player
+
         for m in valid_moves:
             # We reset a temp board state to simulate the move
             temp_g.board = node.Get_state()
-            temp_g.current_player = node.Get_player()
+            temp_g.current_player = moving_player
             # Note: Play_action in new Congklak takes relative move (0-6)
             # Need to verify if the node uses relative or absolute index
             temp_g.Play_action(m)

@@ -54,10 +54,16 @@ class A_MCTS:
         temp_g.board = deepcopy(node.board)
         temp_g.current_player = node.player
         valid_actions = temp_g.Get_valid_moves()
+        
+        moving_player = node.player
+        if len(valid_actions) == 0 and not temp_g.Check_game_end():
+            temp_g.current_player *= -1
+            valid_actions = temp_g.Get_valid_moves()
+            moving_player = temp_g.current_player
 
         for m in valid_actions:
             temp_g.board = deepcopy(node.board)
-            temp_g.current_player = node.player
+            temp_g.current_player = moving_player
             temp_g.seq_boards.buf = deepcopy(node.history) 
             
             temp_g.Play_action(m)
@@ -86,7 +92,7 @@ class A_MCTS:
             if node.terminal:
                 # Terminal value from node.player perspective
                 # node.winner is absolute (1 or -1). 
-                v = node.winner * node.player
+                v = node.winner
             else:
                 # Need to reconstruct game to get NN input
                 temp_g = Congklak()
@@ -94,9 +100,12 @@ class A_MCTS:
                 temp_g.current_player = node.player
                 temp_g.seq_boards.buf = deepcopy(node.history)
                 
-                psa_vector, v = self.nn.predict(temp_g.Get_states())
-                
                 valid_moves = temp_g.Get_valid_moves()
+                if len(valid_moves) == 0 and not temp_g.Check_game_end():
+                    temp_g.current_player *= -1
+                    valid_moves = temp_g.Get_valid_moves()
+                
+                psa_vector, v = self.nn.predict(temp_g.Get_states())
                 
                 # Masking and normalizing psa
                 mask = np.zeros(self.params.action_size)

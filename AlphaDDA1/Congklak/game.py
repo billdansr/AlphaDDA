@@ -66,11 +66,15 @@ def play():
 
     turn = 0
     while not g.Check_game_end():
-        turn += 1
-        g.Print_board()
-        
         valid_moves = g.Get_valid_moves()
         current_side = 'P1' if g.current_player == 1 else 'P2'
+        if len(valid_moves) == 0:
+            print(f"\nPlayer {current_side} has no moves. Passing turn...")
+            g.current_player *= -1
+            continue
+
+        turn += 1
+        g.Print_board()
         print(f"\nTurn {turn} - Player {current_side}")
         
         if g.current_player == 1:

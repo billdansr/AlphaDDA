@@ -226,6 +226,9 @@ class Train():
                 players_per_step = []
                 
                 while not g.Check_game_end():
+                    if len(g.Get_valid_moves()) == 0:
+                        g.current_player *= -1
+                        continue
                     game_states.append(g.Get_states())
                     players_per_step.append(g.current_player)
                     action, prob = self.Action(g=g, count=len(game_states), player=p[(len(game_states)-1)%2])

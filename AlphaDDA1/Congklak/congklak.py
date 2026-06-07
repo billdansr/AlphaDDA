@@ -102,15 +102,7 @@ class Congklak():
         # Check if P2 side is empty
         p2_empty = np.all(b[8:15] == 0)
         
-        if p1_empty or p2_empty:
-            # Game finishes: sweep remaining shells
-            if p1_empty:
-                b[15] += np.sum(b[8:15])
-                b[8:15] = 0
-            if p2_empty:
-                b[7] += np.sum(b[0:7])
-                b[0:7] = 0
-                
+        if p1_empty and p2_empty:
             if b[7] > b[15]:
                 self.winner = self.params.p1
             elif b[15] > b[7]:

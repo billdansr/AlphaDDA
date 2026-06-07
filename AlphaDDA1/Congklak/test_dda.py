@@ -60,6 +60,10 @@ class GridEvaluator():
         
         turn = 0
         while not g.Check_game_end():
+            if len(g.Get_valid_moves()) == 0:
+                g.current_player *= -1
+                continue
+                
             turn += 1
             current_player_type = players[g.current_player]
             

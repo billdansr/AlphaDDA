@@ -33,6 +33,8 @@ class MCTS():
             # 1. Selection
             while len(node.children) > 0:
                 node = self.Select_child(node)
+                if temp_game.current_player != node.parent.player:
+                    temp_game.current_player = node.parent.player
                 temp_game.Play_action(node.move)
 
             # 2. Expansion
@@ -41,6 +43,10 @@ class MCTS():
             
             if not is_end:
                 valid_moves = temp_game.Get_valid_moves()
+                if len(valid_moves) == 0:
+                    temp_game.current_player *= -1
+                    valid_moves = temp_game.Get_valid_moves()
+                
                 for move in valid_moves:
                     sim_game = deepcopy(temp_game)
                     sim_game.Play_action(move)
@@ -52,6 +58,9 @@ class MCTS():
             # 3. Simulation (Rollout)
             while not temp_game.Check_game_end():
                 moves = temp_game.Get_valid_moves()
+                if len(moves) == 0:
+                    temp_game.current_player *= -1
+                    continue
                 temp_game.Play_action(np.random.choice(moves))
             
             # 4. Backpropagation
