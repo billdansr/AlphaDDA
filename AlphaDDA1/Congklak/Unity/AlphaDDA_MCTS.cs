@@ -111,7 +111,7 @@ namespace CongklakAI
             }
             else
             {
-                // DDA: Paper's exact formula from PeerJ-CS 1123 (Fujita, 2022)
+                // DDA: Paper's exact formula (Fujita, 2022): 10^(-A(v + B) + log10(Nmax/2))
                 float exponent = -A * (winScore + X0) + Mathf.Log10(N_MAX / 2.0f);
                 
                 // Prevent integer overflow when casting 10^exponent to int

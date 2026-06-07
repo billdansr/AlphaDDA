@@ -292,40 +292,10 @@ namespace CongklakAI
             }
         }
 
-        /// <summary>
-        /// Tombol Rahasia: Mengabaikan setelan nama dan mengubah status DDA secara manual saat game berlangsung.
-        /// </summary>
-        public void ToggleDDAManually()
-        {
-            isDDAEnabled = !isDDAEnabled;
-            settings.isDDAEnabled = isDDAEnabled;
-            settings.SaveToPrefs();
-            Debug.Log($"[Logger] DDA secara manual diubah menjadi: {isDDAEnabled}");
-            SetStatus($"DDA {(isDDAEnabled ? "AKTIF" : "NON-AKTIF")} (Manual)");
-        }
-
-        /// <summary>
-        /// Dipanggil langsung oleh UI Toggle di dalam game (Event: On Value Changed).
-        /// </summary>
-        /// <param name="isEnabled">Status toggle DDA</param>
-        public void SetDDAGameToggle(bool isEnabled)
-        {
-            isDDAEnabled = isEnabled;
-            settings.isDDAEnabled = isEnabled;
-            settings.SaveToPrefs();
-            Debug.Log($"[Settings] DDA diubah lewat UI menjadi: {isEnabled}");
-            SetStatus($"DDA {(isEnabled ? "AKTIF" : "NON-AKTIF")}");
-        }
-        
-
-
         void Update()
         {
             // Fallback jika kamera belum ter-assign (misal saat ganti scene)
             if (mainCamera == null) mainCamera = Camera.main;
-
-            // Selalu sinkronkan posisi teks UI dengan posisi lubang
-            AlignUIToWorld();
 
             // Update Highlight (Glow) untuk lubang yang aktif
             UpdateHighlights();
@@ -367,6 +337,13 @@ namespace CongklakAI
                     }
                 }
             }
+        }
+
+        void LateUpdate()
+        {
+            // Sinkronkan posisi teks UI setelah semua pergerakan kamera/transform selesai
+            // Ini mencegah jitter/lag visual pada posisi teks UI di mobile
+            AlignUIToWorld();
         }
 
         IEnumerator GameLoop()
@@ -464,7 +441,7 @@ namespace CongklakAI
                     }
                     else if (isP2Human)
                     {
-                        gameOverWinnerText.text = $"Selamat! {GetFormattedPlayerLabel(game.winner)} Menang!";
+                        gameOverWinnerText.text = $"{GetFormattedPlayerLabel(game.winner)} {settings.termVictory}";
                     }
                     else
                     {
@@ -493,7 +470,6 @@ namespace CongklakAI
         /// </summary>
         public void RestartGame()
         {
-            settings.FlipDDA();
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
@@ -502,7 +478,6 @@ namespace CongklakAI
         /// </summary>
         public void BackToMainMenu()
         {
-            settings.FlipDDA();
             settings.SaveToPrefs();
 
             SceneManager.LoadScene(mainMenuSceneName);
