@@ -209,12 +209,16 @@ namespace CongklakAI
             System.IO.File.WriteAllText(filePath, content);
             Debug.Log($"[Logger] Log disimpan ke folder Pending: {filePath}");
 
-            // 2. Jalankan proses sinkronisasi
-            StartCoroutine(UploadPendingLogs());
+            // 2. Jalankan proses sinkronisasi hanya jika user setuju
+            if (settings != null && settings.hasConsentedData)
+            {
+                StartCoroutine(UploadPendingLogs());
+            }
         }
 
         private IEnumerator UploadPendingLogs()
         {
+            if (settings != null && !settings.hasConsentedData) yield break;
             if (isSyncingLogs) yield break;
             isSyncingLogs = true;
 

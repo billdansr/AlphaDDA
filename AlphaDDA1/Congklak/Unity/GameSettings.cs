@@ -12,6 +12,7 @@ namespace CongklakAI
         public float musicVolume = 0.4f; // Default lebih pelan
         public float sfxVolume = 1.0f;   // Default maksimal
         public bool isP2Human = false;
+        public bool hasConsentedData = false; // Status persetujuan privasi
 
         [Header("UI Terminology")]
         public string termTurn = "Giliran";
@@ -48,6 +49,7 @@ namespace CongklakAI
         public const string PREF_MUSIC = "Music";
         public const string PREF_MUSIC_VOL = "MusicVolume";
         public const string PREF_SFX_VOL = "SFXVolume";
+        public const string PREF_CONSENT = "DataConsent";
 
         public void SaveToPrefs()
         {
@@ -56,6 +58,7 @@ namespace CongklakAI
             PlayerPrefs.SetInt(PREF_MUSIC, isMusicEnabled ? 1 : 0);
             PlayerPrefs.SetFloat(PREF_MUSIC_VOL, musicVolume);
             PlayerPrefs.SetFloat(PREF_SFX_VOL, sfxVolume);
+            PlayerPrefs.SetInt(PREF_CONSENT, hasConsentedData ? 1 : 0);
             PlayerPrefs.Save();
         }
 
@@ -66,6 +69,7 @@ namespace CongklakAI
             isMusicEnabled = PlayerPrefs.GetInt(PREF_MUSIC, 1) == 1;
             musicVolume = PlayerPrefs.GetFloat(PREF_MUSIC_VOL, 0.4f);
             sfxVolume = PlayerPrefs.GetFloat(PREF_SFX_VOL, 1.0f);
+            hasConsentedData = PlayerPrefs.GetInt(PREF_CONSENT, 0) == 1;
         }
 
         /// <summary>

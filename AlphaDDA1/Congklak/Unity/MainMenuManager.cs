@@ -12,9 +12,11 @@ namespace CongklakAI
 
         public TMP_InputField nameInputField;
         public Toggle ddaToggle;
+        public Toggle consentToggle; // Toggle untuk persetujuan privasi
         public Toggle musicToggle;
         public Button playVsAIButton;
         public Button playVsHumanButton;
+        public string privacyPolicyUrl = "https://your-website.com/privacy"; // Ganti dengan link Anda
 
         [Header("Scene Configuration")]
         public string gameSceneName = "Game"; // Nama scene game Anda
@@ -34,6 +36,12 @@ namespace CongklakAI
             {
                 ddaToggle.isOn = settings.isDDAEnabled;
                 ddaToggle.onValueChanged.AddListener(OnDDAToggledManually);
+            }
+
+            if (consentToggle != null)
+            {
+                consentToggle.isOn = settings.hasConsentedData;
+                consentToggle.onValueChanged.AddListener(OnConsentToggled);
             }
 
             if (musicToggle != null)
@@ -90,6 +98,22 @@ namespace CongklakAI
             Debug.Log($"[Main Menu] Musik diubah menjadi: {isOn}");
         }
 
+        private void OnConsentToggled(bool isOn)
+        {
+            settings.hasConsentedData = isOn;
+            settings.SaveToPrefs();
+            Debug.Log($"[Main Menu] Persetujuan data: {isOn}");
+        }
+
+        /// <summary>
+        /// Membuka URL Kebijakan Privasi di browser (Wajib untuk Play Store).
+        /// Panggil fungsi ini dari Button "Kebijakan Privasi".
+        /// </summary>
+        public void OpenPrivacyPolicy()
+        {
+            Application.OpenURL(privacyPolicyUrl);
+        }
+
         /// <summary>
         /// Menyimpan data dan berpindah ke scene game utama.
         /// </summary>
@@ -97,6 +121,13 @@ namespace CongklakAI
         {
             if (nameInputField != null)
                 settings.participantName = nameInputField.text.Trim();
+
+            // Validasi: Jika data mau dikirim ke Google Form, pastikan sudah setuju
+            if (!settings.hasConsentedData && !playVsHuman)
+            {
+                // Anda bisa menambahkan popup peringatan di sini
+                Debug.LogWarning("Persetujuan data diperlukan untuk mengirim log penelitian.");
+            }
 
             settings.isP2Human = playVsHuman;
             settings.SaveToPrefs();

@@ -32,5 +32,9 @@ Untuk memperbarui otak AI di aplikasi Android:
 1. Jalankan `python onnx_export_unity.py`.
 2. Salin file `CongklakAlphaZero.onnx` yang dihasilkan ke dalam folder `Assets/` di project Unity.
 
+## Kebijakan Privasi (Privacy Policy)
+Aplikasi ini mengumpulkan data anonim untuk keperluan penelitian akademik. Detail mengenai data apa saja yang diambil dan bagaimana data tersebut dikelola dapat dilihat pada:
+**Lihat Kebijakan Privasi (PRIVACY.md)**
+
 ---
 *Penelitian ini dikembangkan sebagai bagian dari tugas akhir/skripsi menggunakan metodologi Design Science Research Method (DSRM).*
