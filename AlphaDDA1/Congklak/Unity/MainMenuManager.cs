@@ -56,10 +56,7 @@ namespace CongklakAI
         private void OnNameValueChanged(string newName)
         {
             if (ddaToggle == null) return;
-
-            // Matikan listener sementara agar tidak mentrigger loop event
-            ddaToggle.onValueChanged.RemoveListener(OnDDAToggledManually);
-
+            
             if (newName.EndsWith("A", System.StringComparison.OrdinalIgnoreCase))
             {
                 ddaToggle.isOn = false;
@@ -70,9 +67,6 @@ namespace CongklakAI
                 ddaToggle.isOn = true;
                 Debug.Log("[Main Menu] Nama berakhiran 'B' terdeteksi. DDA otomatis Diaktifkan.");
             }
-
-            // Daftarkan kembali listener manual setelah auto-update selesai
-            ddaToggle.onValueChanged.AddListener(OnDDAToggledManually);
         }
 
         /// <summary>

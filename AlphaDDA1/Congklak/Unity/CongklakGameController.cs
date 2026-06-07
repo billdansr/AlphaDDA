@@ -243,7 +243,7 @@ namespace CongklakAI
                     
                     lineCount++;
                     if (uploadStatusText != null) 
-                        uploadStatusText.text = $"{settings.termTurn} ({pendingFiles.Length} file): {lineCount}/{lines.Length - 1}";
+                        uploadStatusText.text = $"{settings.termSyncing} ({pendingFiles.Length} file): {lineCount}/{lines.Length - 1}";
                 }
 
                 // Pindahkan ke folder 'Uploaded' hanya jika file selesai diproses
@@ -380,7 +380,7 @@ namespace CongklakAI
                 }
                 else
                 {
-                    SetStatus($"{playerLabel} {settings.termThinking}..."); // Log awal
+                    SetStatus($"{playerLabel} {settings.termThinking}"); // Animasi titik akan ditangani coroutine
                     
                     // Mulai animasi titik-titik
                     if (statusAnimationCoroutine != null) StopCoroutine(statusAnimationCoroutine);
