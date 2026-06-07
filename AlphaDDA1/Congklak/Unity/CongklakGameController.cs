@@ -20,8 +20,8 @@ namespace CongklakAI
         public bool isP2Human = false;
 
         [Header("Difficulty Parameters")]
-        public float sensitivityA = 1.0f; // Calibrated Golden Parameter (A=1.0)
-        public float offsetX0 = -2.0f;    // Calibrated Golden Parameter (X0=-2.0)
+        public float sensitivityA = 1.5f; // Hasil Grid Search Terbaik
+        public float offsetX0 = -2.5f;    // Hasil Grid Search Terbaik
         public int maxSims = 300;
         public float stepDelay = 0.2f; // Time between shell drops
         #endregion
