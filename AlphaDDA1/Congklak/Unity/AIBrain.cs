@@ -22,9 +22,9 @@ namespace CongklakAI
                 runtimeModel = ModelLoader.Load(modelAsset);
                 
                 // Create a worker. GPU is preferred for ResNets
-                // Use BackendType.GPUCompute for modern Android/Unity 6
-                // Fallback to CPU if needed
-                worker = new Worker(runtimeModel, BackendType.GPUCompute);
+                // Universal: BackendType.CPU adalah pilihan terbaik untuk performa di Android/iOS/PC.
+                // Sentis secara otomatis menggunakan Burst untuk optimasi jika paketnya terinstal.
+                worker = new Worker(runtimeModel, BackendType.CPU);
             }
         }
 
@@ -33,10 +33,13 @@ namespace CongklakAI
         /// </summary>
         public (float[] pi, float v) Predict(float[,,] state)
         {
+            if (worker == null) return (new float[8], 0);
+
             // Input shape is [1, 3, 2, 8]
             TensorShape shape = new(1, 3, 2, 8);
             
             // Flatten 3D array to 1D for Tensor creation
+            // Universal: Loop standar dipahami oleh semua compiler C#
             float[] flatten = new float[1 * 3 * 2 * 8];
             int idx = 0;
             for (int c = 0; c < 3; c++)

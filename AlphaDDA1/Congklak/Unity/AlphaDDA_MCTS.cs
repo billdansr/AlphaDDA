@@ -94,6 +94,9 @@ namespace CongklakAI
         {
             if (onComplete == null) yield break;
 
+            // Universal: Mulai hitung waktu sejak awal frame untuk mencakup Root Prediction
+            System.Diagnostics.Stopwatch frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             // 1. Calculate Simulations
             var (pi_root, v_root) = brain.Predict(GenerateStates(root.board, root.player));
             
@@ -129,22 +132,10 @@ namespace CongklakAI
 
             Debug.Log($"[AlphaDDA] v_raw={v_root:F3}, v_avg={winScore:F3} -> Sims: {numSims} (isDDA={!Mathf.Approximately(A, 0.0f)})");
             
-            // Gunakan Stopwatch untuk mengukur beban kerja CPU per frame
-            System.Diagnostics.Stopwatch frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
-
             // 2. MCTS Logic
             for (int i = 0; i < numSims; i++)
             {
                 MCTSNode node = root;
-                
-                // Periksa apakah kalkulasi di frame ini sudah terlalu lama
-                // Batas 5-8ms adalah ideal agar sisa waktu frame bisa digunakan OS untuk mendinginkan CPU
-                if (frameStopwatch.ElapsedMilliseconds > 7) 
-                {
-                    // Jeda nyata (bukan cuma null) memberikan kesempatan CPU core untuk idle/turun frekuensi
-                    yield return new WaitForSeconds(0.02f); 
-                    frameStopwatch.Restart();
-                }
                 
                 // Selection phase: crawl down the tree using PUCT
                 while (node.children.Count > 0 && !node.terminal)
@@ -169,6 +160,16 @@ namespace CongklakAI
 
                 // Backpropagation
                 Backpropagate(node, v);
+
+                // Periksa frame budget SETELAH inferensi (Predict) selesai.
+                // Universal: Gunakan 8ms agar aman untuk layar 60Hz, 90Hz, maupun 120Hz.
+                // Ini menjamin Main Thread punya sisa waktu cukup untuk input & rendering.
+                if (frameStopwatch.ElapsedMilliseconds > 8) 
+                {
+                    // Memberikan kontrol kembali ke Unity UI agar tetap responsif
+                    yield return null; 
+                    frameStopwatch.Restart();
+                }
             }
 
             onComplete(DecideMove(turnCount));

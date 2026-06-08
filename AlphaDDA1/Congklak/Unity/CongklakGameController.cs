@@ -9,6 +9,48 @@ using UnityEngine.SceneManagement;
 
 namespace CongklakAI
 {
+    [System.Serializable]
+    public struct GoogleFormEntryConfig
+    {
+        public string participant;
+        public string isDDAEnabled;
+        public string isP2Human;
+        public string timeInSession;
+        public string turn;
+        public string player;
+        public string move;
+        public string boardEval;
+        public string simulations;
+        public string thinkTime;
+        public string scoreP1;
+        public string scoreP2;
+
+        // Indexer agar kode loop lama tetap bekerja tanpa perubahan besar
+        public string this[int index]
+        {
+            get
+            {
+                switch (index)
+                {
+                    case 0: return participant;
+                    case 1: return isDDAEnabled;
+                    case 2: return isP2Human;
+                    case 3: return timeInSession;
+                    case 4: return turn;
+                    case 5: return player;
+                    case 6: return move;
+                    case 7: return boardEval;
+                    case 8: return simulations;
+                    case 9: return thinkTime;
+                    case 10: return scoreP1;
+                    case 11: return scoreP2;
+                    default: return null;
+                }
+            }
+        }
+        public int Length => 12;
+    }
+
     public class CongklakGameController : MonoBehaviour
     {
         #region 1. Configuration & Parameters
@@ -50,7 +92,7 @@ namespace CongklakAI
 
         [Header("Google Form Configuration")]
         public string gFormUrl = "https://docs.google.com/forms/d/e/.../formResponse";
-        public string[] entryIds = new string[11]; // Fill with Google Form entry IDs (e.g., "entry.123456"). See gform_setup.md for guidance.
+        public GoogleFormEntryConfig entryIds; // Diganti menjadi struct agar berlabel di Inspector
 
         private float gameStartTime;
         private float turnStartTime;
@@ -186,8 +228,11 @@ namespace CongklakAI
 
         private void LogMove(int player, int move, float v, int sims, int s1, int s2)
         {
+            // Sanitasi: Pastikan nama tidak mengandung koma yang bisa merusak parsing CSV
+            string safeName = participantName.Replace(",", "");
+            
             float thinkTime = Time.time - turnStartTime;
-            string logRow = $"{participantName},{isDDAEnabled},{Time.time - gameStartTime:F2},{turnCount},{player},{move},{v:F3},{sims},{thinkTime:F2},{s1},{s2}";
+            string logRow = $"{safeName},{isDDAEnabled},{isP2Human},{Time.time - gameStartTime:F2},{turnCount},{player},{move},{v:F3},{sims},{thinkTime:F2},{s1},{s2}";
             gameLogs.Add(logRow);
             
             // Reset timer untuk langkah berikutnya
@@ -203,14 +248,14 @@ namespace CongklakAI
             string fileName = $"GameLog_{participantName}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
             string filePath = System.IO.Path.Combine(folderPath, fileName);
 
-            string header = "Participant,IsDDAEnabled,TimeInSession,Turn,Player,Move,BoardEval_V,Simulations,ThinkTime,ScoreP1,ScoreP2";
+            string header = "Participant,IsDDAEnabled,IsP2Human,TimeInSession,Turn,Player,Move,BoardEval_V,Simulations,ThinkTime,ScoreP1,ScoreP2";
             string content = header + string.Join("\n", gameLogs);
 
             System.IO.File.WriteAllText(filePath, content);
             Debug.Log($"[Logger] Log disimpan ke folder Pending: {filePath}");
 
-            // 2. Jalankan proses sinkronisasi hanya jika user setuju
-            if (settings != null && settings.hasConsentedData)
+            // 2. Jalankan proses sinkronisasi hanya jika user setuju DAN bukan vs Human (khusus penelitian AI)
+            if (settings != null && settings.hasConsentedData && !isP2Human)
             {
                 StartCoroutine(UploadPendingLogs());
             }
@@ -274,7 +319,7 @@ namespace CongklakAI
 
         private IEnumerator SendRowToGoogle(string[] data)
         {
-            if (string.IsNullOrEmpty(gFormUrl) || entryIds == null || entryIds.Length == 0) yield break;
+            if (string.IsNullOrEmpty(gFormUrl)) yield break;
 
             WWWForm form = new WWWForm();
             for (int i = 0; i < entryIds.Length && i < data.Length; i++)
