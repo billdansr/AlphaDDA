@@ -16,6 +16,7 @@ namespace CongklakAI
         public Toggle musicToggle;
         public Button playVsAIButton;
         public Button playVsHumanButton;
+        public Button exitButton;
         public string privacyPolicyUrl = "https://your-website.com/privacy"; // Ganti dengan link Anda
 
         [Header("Scene Configuration")]
@@ -56,6 +57,9 @@ namespace CongklakAI
 
             if (playVsHumanButton != null)
                 playVsHumanButton.onClick.AddListener(() => StartGame(true));
+
+            if (exitButton != null)
+                exitButton.onClick.AddListener(ExitGame);
         }
 
         /// <summary>
@@ -133,6 +137,19 @@ namespace CongklakAI
             settings.SaveToPrefs();
 
             SceneManager.LoadScene(gameSceneName);
+        }
+
+        /// <summary>
+        /// Menutup aplikasi.
+        /// </summary>
+        public void ExitGame()
+        {
+            Debug.Log("[Main Menu] Keluar dari permainan...");
+            #if UNITY_EDITOR
+                UnityEditor.EditorApplication.isPlaying = false;
+            #else
+                Application.Quit();
+            #endif
         }
     }
 }
