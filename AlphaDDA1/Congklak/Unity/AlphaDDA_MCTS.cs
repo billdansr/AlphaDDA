@@ -50,6 +50,7 @@ namespace CongklakAI
     {
         public float lastV { get; private set; } = 0.0f;
         public int lastSims { get; private set; } = 0;
+        public float[] lastPi { get; private set; } = null;
 
         private MCTSNode root;
         private AIBrain brain;
@@ -128,9 +129,10 @@ namespace CongklakAI
             
             // Record variables for logging
             this.lastV = v_root;
+            this.lastPi = pi_root;
             this.lastSims = numSims;
 
-            Debug.Log($"[AlphaDDA] v_raw={v_root:F3}, v_avg={winScore:F3} -> Sims: {numSims} (isDDA={!Mathf.Approximately(A, 0.0f)})");
+            Debug.Log($"[AlphaDDA] v_raw={v_root:F3}, v_avg={winScore:F3} -> Sims: {numSims} (isDda={!Mathf.Approximately(A, 0.0f)})");
             
             // 2. MCTS Logic
             for (int i = 0; i < numSims; i++)

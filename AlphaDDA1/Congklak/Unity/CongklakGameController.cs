@@ -12,18 +12,29 @@ namespace CongklakAI
     [System.Serializable]
     public struct GoogleFormEntryConfig
     {
+        [Header("Session Identity")]
         public string participant;
-        public string isDDAEnabled;
+        public string sessionId; // Added for research tracking
+        public string isDda;
         public string isP2Human;
         public string timeInSession;
+
+        [Header("Game Flow")]
         public string turn;
         public string player;
         public string move;
-        public string boardEval;
-        public string simulations;
         public string thinkTime;
+        public string isTerminal; // Explicit flag for end of game
+
+        [Header("AI Metrics (DDA)")]
+        public string v;
+        public string simulations;
+        public string pi; 
+
+        [Header("Board Stats")]
         public string scoreP1;
         public string scoreP2;
+        public string boardState; // Added for detailed research analysis
 
         // Indexer agar kode loop lama tetap bekerja tanpa perubahan besar
         public string this[int index]
@@ -33,22 +44,26 @@ namespace CongklakAI
                 switch (index)
                 {
                     case 0: return participant;
-                    case 1: return isDDAEnabled;
-                    case 2: return isP2Human;
-                    case 3: return timeInSession;
-                    case 4: return turn;
-                    case 5: return player;
-                    case 6: return move;
-                    case 7: return boardEval;
-                    case 8: return simulations;
-                    case 9: return thinkTime;
-                    case 10: return scoreP1;
-                    case 11: return scoreP2;
+                    case 1: return sessionId;
+                    case 2: return isDda;
+                    case 3: return isP2Human;
+                    case 4: return timeInSession;
+                    case 5: return turn;
+                    case 6: return player;
+                    case 7: return move;
+                    case 8: return thinkTime;
+                    case 9: return isTerminal;
+                    case 10: return v;
+                    case 11: return simulations;
+                    case 12: return pi;
+                    case 13: return scoreP1;
+                    case 14: return scoreP2;
+                    case 15: return boardState;
                     default: return null;
                 }
             }
         }
-        public int Length => 12;
+        public int Length => 16;
     }
 
     public class CongklakGameController : MonoBehaviour
@@ -88,12 +103,13 @@ namespace CongklakAI
         public string participantName = "Guest";
 
         [Header("DDA Settings")]
-        public bool isDDAEnabled = true;
+        public bool isDda = true;
 
         [Header("Google Form Configuration")]
         public string gFormUrl = "https://docs.google.com/forms/d/e/.../formResponse";
         public GoogleFormEntryConfig entryIds; // Diganti menjadi struct agar berlabel di Inspector
 
+        private string sessionID;
         private float gameStartTime;
         private float turnStartTime;
         private List<string> gameLogs = new List<string>();        
@@ -164,9 +180,17 @@ namespace CongklakAI
             participantName = string.IsNullOrEmpty(settings.participantName) 
                 ? "Guest" 
                 : settings.participantName;
-            isDDAEnabled = settings.isDDAEnabled;
+            isDda = settings.isDda;
             isP2Human = settings.isP2Human;
             
+            // Increment session count untuk partisipan ini
+            settings.sessionCount++;
+            settings.SaveToPrefs();
+
+            // Format ID: Nama_SesiKe_IDUnik (Sangat membantu saat analisis data)
+            string shortGuid = System.Guid.NewGuid().ToString().Substring(0, 4).ToUpper();
+            sessionID = $"{participantName}_S{settings.sessionCount}_{shortGuid}";
+
             if (audioSource != null) audioSource.volume = settings.sfxVolume;
 
             // Clear DDA's persistent win score queue from previous games/sessions
@@ -226,13 +250,17 @@ namespace CongklakAI
 
         
 
-        private void LogMove(int player, int move, float v, int sims, int s1, int s2)
+        private void LogMove(int player, int move, float v, int sims, float[] pi, int s1, int s2, bool isTerminal = false)
         {
             // Sanitasi: Pastikan nama tidak mengandung koma yang bisa merusak parsing CSV
             string safeName = participantName.Replace(",", "");
             
+            // Serialize board state using semicolons to avoid CSV delimiter conflict
+            string boardData = string.Join(";", game.board);
+            string piData = pi != null ? string.Join(";", pi) : "";
+
             float thinkTime = Time.time - turnStartTime;
-            string logRow = $"{safeName},{isDDAEnabled},{isP2Human},{Time.time - gameStartTime:F2},{turnCount},{player},{move},{v:F3},{sims},{thinkTime:F2},{s1},{s2}";
+            string logRow = $"{safeName},{sessionID},{isDda},{isP2Human},{Time.time - gameStartTime:F2},{turnCount},{player},{move},{thinkTime:F2},{isTerminal},{v:F3},{sims},{piData},{s1},{s2},{boardData}";
             gameLogs.Add(logRow);
             
             // Reset timer untuk langkah berikutnya
@@ -248,16 +276,23 @@ namespace CongklakAI
             string fileName = $"GameLog_{participantName}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
             string filePath = System.IO.Path.Combine(folderPath, fileName);
 
-            string header = "Participant,IsDDAEnabled,IsP2Human,TimeInSession,Turn,Player,Move,BoardEval_V,Simulations,ThinkTime,ScoreP1,ScoreP2";
-            string content = header + string.Join("\n", gameLogs);
+            string header = "participant,sessionId,isDda,isP2Human,timeInSession,turn,player,move,thinkTime,isTerminal,v,simulations,pi,scoreP1,scoreP2,boardState";
+            string content = header + "\n" + string.Join("\n", gameLogs);
 
             System.IO.File.WriteAllText(filePath, content);
             Debug.Log($"[Logger] Log disimpan ke folder Pending: {filePath}");
 
-            // 2. Jalankan proses sinkronisasi hanya jika user setuju DAN bukan vs Human (khusus penelitian AI)
+            // 2. Jalankan proses sinkronisasi hanya jika user setuju DAN bukan vs Human
             if (settings != null && settings.hasConsentedData && !isP2Human)
             {
                 StartCoroutine(UploadPendingLogs());
+            }
+            else
+            {
+                // Safety: Pastikan tombol aktif jika kita melewati proses sinkronisasi
+                if (playAgainButton != null) playAgainButton.interactable = true;
+                if (mainMenuButton != null) mainMenuButton.interactable = true;
+                if (uploadStatusText != null) uploadStatusText.text = "";
             }
         }
 
@@ -270,11 +305,23 @@ namespace CongklakAI
             string pendingPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs", "Pending");
             string uploadedPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs", "Uploaded");
 
-            if (!System.IO.Directory.Exists(pendingPath)) { isSyncingLogs = false; yield break; }
+            if (!System.IO.Directory.Exists(pendingPath)) 
+            { 
+                isSyncingLogs = false; 
+                if (playAgainButton != null) playAgainButton.interactable = true;
+                if (mainMenuButton != null) mainMenuButton.interactable = true;
+                yield break; 
+            }
             if (!System.IO.Directory.Exists(uploadedPath)) System.IO.Directory.CreateDirectory(uploadedPath);
 
             string[] pendingFiles = System.IO.Directory.GetFiles(pendingPath, "*.csv");
-            if (pendingFiles.Length == 0) { isSyncingLogs = false; yield break; }
+            if (pendingFiles.Length == 0) 
+            { 
+                isSyncingLogs = false; 
+                if (playAgainButton != null) playAgainButton.interactable = true;
+                if (mainMenuButton != null) mainMenuButton.interactable = true;
+                yield break; 
+            }
 
             Debug.Log("[Logger] Memulai upload data ke Google Sheets...");
             
@@ -420,9 +467,16 @@ namespace CongklakAI
                     pendingMove = -1;
                     isInteracting = true;
                     yield return new WaitUntil(() => pendingMove != -1);
+
+                    // Evaluasi posisi board dari sudut pandang AI sebelum manusia melangkah
+                    // Ini memberikan data 'Value' (v) dan 'Policy' (pi) untuk langkah manusia
+                    var (humanPi, humanV) = aiBrain.Predict(game.GetStates());
+                    
+                    // Memberikan satu frame jeda agar UI tidak terasa kaku jika CPU sibuk
+                    yield return null; 
                     
                     // LOG HUMAN MOVE
-                    LogMove(playerTag, pendingMove, 0, 0, game.board[7], game.board[15]);
+                    LogMove(playerTag, pendingMove, humanV, 0, humanPi, game.board[7], game.board[15], false);
                     
                     SetStatus($"{playerLabel} {settings.termMoving}");
                     yield return StartCoroutine(ExecuteMove(pendingMove));
@@ -436,7 +490,7 @@ namespace CongklakAI
                     statusAnimationCoroutine = StartCoroutine(AnimateThinkingStatus($"{playerLabel} {settings.termThinking}"));
 
                     int aiMove = -1;
-                    float activeSensitivity = isDDAEnabled ? sensitivityA : 0.0f;
+                    float activeSensitivity = isDda ? sensitivityA : 0.0f;
                     AlphaDDA_MCTS mcts = new AlphaDDA_MCTS(game, aiBrain, activeSensitivity, offsetX0, maxSims);
                     
                     // Run MCTS on main thread via Coroutine (Inference safe)
@@ -447,7 +501,7 @@ namespace CongklakAI
                     statusAnimationCoroutine = null;
 
                     // LOG AI MOVE (Capture DDA Metrics)
-                    LogMove(playerTag, aiMove, mcts.lastV, mcts.lastSims, game.board[7], game.board[15]);
+                    LogMove(playerTag, aiMove, mcts.lastV, mcts.lastSims, mcts.lastPi, game.board[7], game.board[15], false);
 
                     yield return new WaitForSeconds(0.5f); // Cosmetic delay
                     if (aiMove != -1)
@@ -461,6 +515,9 @@ namespace CongklakAI
 
                 yield return null;
             }
+
+            // LOG TERMINAL STATE: Mencatat hasil akhir papan secara resmi ke dalam log
+            LogMove(0, -1, game.winner, 0, null, game.board[7], game.board[15], true);
 
             string winnerLabel = settings.termDraw;
             if (game.winner != 0)
@@ -504,10 +561,23 @@ namespace CongklakAI
                     gameOverDetailsText.text = $"{settings.termFinalScore}\nP1: {game.board[7]}  |  P2: {game.board[15]}\n{settings.termTotalTurns}: {turnCount}\n{settings.termP1FirstInfo}";
                 }
                 
-                // Matikan tombol sementara agar data penelitian terupload aman ke Google Form!
-                if (playAgainButton != null) playAgainButton.interactable = false;
-                if (mainMenuButton != null) mainMenuButton.interactable = false;
-                if (uploadStatusText != null) uploadStatusText.text = settings.termSyncing;
+                // Check if synchronization will actually happen (skipped for Local PvP or no consent)
+                bool willSync = settings != null && settings.hasConsentedData && !isP2Human;
+                if (willSync)
+                {
+                    // Matikan tombol sementara agar data penelitian terupload aman ke Google Form! 
+                    // Tombol akan diaktifkan kembali oleh coroutine UploadPendingLogs() setelah selesai.
+                    if (playAgainButton != null) playAgainButton.interactable = false;
+                    if (mainMenuButton != null) mainMenuButton.interactable = false;
+                    if (uploadStatusText != null) uploadStatusText.text = settings.termSyncing;
+                }
+                else
+                {
+                    // Pastikan tombol aktif jika tidak ada proses sinkronisasi yang dijadwalkan (Local PvP)
+                    if (playAgainButton != null) playAgainButton.interactable = true;
+                    if (mainMenuButton != null) mainMenuButton.interactable = true;
+                    if (uploadStatusText != null) uploadStatusText.text = "";
+                }
             }
 
             // EXPORT DATA SETELAH SELESAI
@@ -521,7 +591,7 @@ namespace CongklakAI
         {
             if (settings != null)
             {
-                settings.FlipDDA();
+                settings.FlipDda();
             }
 
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
@@ -534,7 +604,7 @@ namespace CongklakAI
         {
             if (settings != null)
             {
-                settings.FlipDDA();
+                settings.FlipDda();
             }
 
             settings.SaveToPrefs();

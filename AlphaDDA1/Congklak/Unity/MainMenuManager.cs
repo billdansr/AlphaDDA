@@ -35,8 +35,8 @@ namespace CongklakAI
 
             if (ddaToggle != null)
             {
-                ddaToggle.isOn = settings.isDDAEnabled;
-                ddaToggle.onValueChanged.AddListener(OnDDAToggledManually);
+                ddaToggle.isOn = settings.isDda;
+                ddaToggle.onValueChanged.AddListener(OnDdaToggledManually);
             }
 
             if (consentToggle != null)
@@ -84,9 +84,9 @@ namespace CongklakAI
         /// <summary>
         /// Dipanggil ketika partisipan mengubah Toggle DDA secara manual (lewat Settings di Main Menu).
         /// </summary>
-        private void OnDDAToggledManually(bool isOn)
+        private void OnDdaToggledManually(bool isOn)
         {
-            settings.isDDAEnabled = isOn;
+            settings.isDda = isOn;
             settings.SaveToPrefs();
             Debug.Log($"[Main Menu] Toggle DDA diubah secara manual menjadi: {isOn}");
         }
@@ -123,8 +123,18 @@ namespace CongklakAI
         /// </summary>
         public void StartGame(bool playVsHuman)
         {
-            if (nameInputField != null)
-                settings.participantName = nameInputField.text.Trim();
+            string enteredName = nameInputField != null ? nameInputField.text.Trim() : "";
+
+            // Logika Deteksi Partisipan Baru:
+            // Jika nama yang dimasukkan berbeda dengan yang tersimpan, reset counter sesi.
+            if (!string.IsNullOrEmpty(enteredName) && 
+                !string.Equals(enteredName, settings.participantName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                settings.sessionCount = 0;
+                Debug.Log($"[Main Menu] Partisipan baru '{enteredName}' dideteksi. Mengatur ulang sessionCount ke 0.");
+            }
+            
+            settings.participantName = enteredName;
 
             // Validasi: Jika data mau dikirim ke Google Form, pastikan sudah setuju
             if (!settings.hasConsentedData && !playVsHuman)
@@ -137,6 +147,17 @@ namespace CongklakAI
             settings.SaveToPrefs();
 
             SceneManager.LoadScene(gameSceneName);
+        }
+
+        /// <summary>
+        /// Fungsi manual untuk me-reset data partisipan (bisa dihubungkan ke Button "Partisipan Baru").
+        /// </summary>
+        public void ResetParticipantSession()
+        {
+            settings.ResetSessionCount();
+            if (nameInputField != null) nameInputField.text = "";
+            settings.participantName = "";
+            settings.SaveToPrefs();
         }
 
         /// <summary>
