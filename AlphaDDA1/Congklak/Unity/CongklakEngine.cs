@@ -15,18 +15,18 @@ namespace CongklakAI
         public int currentPlayer = 1; // 1 for P1, -1 for P2
         public int winner = 0;
         
-        public CongklakEngine(int initialShells = 7)
+        public CongklakEngine(int initialPieces = 7)
         {
-            InitializeBoard(initialShells);
+            InitializeBoard(initialPieces);
         }
 
-        public void InitializeBoard(int initialShells)
+        public void InitializeBoard(int initialPieces)
         {
             Array.Clear(board, 0, BOARD_SIZE);
             for (int i = 0; i < 7; i++)
             {
-                board[i] = initialShells;
-                board[i + 8] = initialShells;
+                board[i] = initialPieces;
+                board[i + 8] = initialPieces;
             }
             currentPlayer = 1;
             winner = 0;
@@ -67,18 +67,18 @@ namespace CongklakAI
             return false;
         }
 
-        public IEnumerable<(int holeIdx, int shellsInHand)> PlayAction(int action)
+        public IEnumerable<(int holeIdx, int piecesInHand)> PlayAction(int action)
         {
             // Action is relative (0..6)
             int startHole = (currentPlayer == 1) ? action : action + 8;
             
-            int shells = board[startHole];
+            int pieces = board[startHole];
             board[startHole] = 0;
             int currHole = startHole;
             
             bool extraTurn = false;
             
-            while (shells > 0)
+            while (pieces > 0)
             {
                 currHole = (currHole + 1) % 16;
                 
@@ -88,12 +88,12 @@ namespace CongklakAI
                 
                 // Drop 1 shell
                 board[currHole]++;
-                shells--;
+                pieces--;
                 
                 // YIELD for UI animation: (where we dropped, how many left in hand)
-                yield return (currHole, shells);
+                yield return (currHole, pieces);
                 
-                if (shells == 0)
+                if (pieces == 0)
                 {
                     // 1. Drops in own store -> extra turn
                     if ((currentPlayer == 1 && currHole == 7) || (currentPlayer == -1 && currHole == 15))
@@ -125,11 +125,11 @@ namespace CongklakAI
                     // 3. Drops in non-empty hole -> pick up and continue
                     else if (board[currHole] > 1)
                     {
-                        shells = board[currHole];
+                        pieces = board[currHole];
                         board[currHole] = 0;
                         
-                        // YIELD for UI animation: Picking up shells
-                        yield return (currHole, shells);
+                        // YIELD for UI animation: Picking up pieces
+                        yield return (currHole, pieces);
                     }
                 }
             }

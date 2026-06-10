@@ -10,6 +10,7 @@ namespace CongklakAI
         [Header("UI References")]
         public GameSettings settings; // Drag SO ke sini
 
+        public GameObject namePromptPanel; // Popup yang meminta nama partisipan
         public TMP_InputField nameInputField;
         public Toggle ddaToggle;
         public Toggle consentToggle; // Toggle untuk persetujuan privasi
@@ -22,10 +23,23 @@ namespace CongklakAI
         [Header("Scene Configuration")]
         public string gameSceneName = "Game"; // Nama scene game Anda
 
+        void Awake()
+        {
+            // Ensure the popup state is correct before the first frame
+            if (settings == null) return;
+            settings.LoadFromPrefs();
+
+            // Simple Toggle: Show only if participantName is missing
+            if (namePromptPanel != null)
+            {
+                bool hasName = !string.IsNullOrEmpty(settings.participantName);
+                namePromptPanel.SetActive(!hasName);
+            }
+        }
+
         void Start()
         {
             if (settings == null) return;
-            settings.LoadFromPrefs();
 
             if (nameInputField != null)
             {
@@ -67,17 +81,24 @@ namespace CongklakAI
         /// </summary>
         private void OnNameValueChanged(string newName)
         {
-            if (ddaToggle == null) return;
+            if (string.IsNullOrWhiteSpace(newName)) return;
+
+            // Simpan nama secara otomatis saat selesai mengetik atau ganti fokus
+            settings.participantName = newName.Trim();
+            settings.SaveToPrefs();
             
-            if (newName.EndsWith("A", System.StringComparison.OrdinalIgnoreCase))
+            if (ddaToggle != null)
             {
-                ddaToggle.isOn = false;
-                Debug.Log("[Main Menu] Nama berakhiran 'A' terdeteksi. DDA otomatis Dinonaktifkan.");
-            }
-            else if (newName.EndsWith("B", System.StringComparison.OrdinalIgnoreCase))
-            {
-                ddaToggle.isOn = true;
-                Debug.Log("[Main Menu] Nama berakhiran 'B' terdeteksi. DDA otomatis Diaktifkan.");
+                if (newName.EndsWith("A", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    ddaToggle.isOn = false;
+                    Debug.Log("[Main Menu] Nama berakhiran 'A' terdeteksi. DDA otomatis Dinonaktifkan.");
+                }
+                else if (newName.EndsWith("B", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    ddaToggle.isOn = true;
+                    Debug.Log("[Main Menu] Nama berakhiran 'B' terdeteksi. DDA otomatis Diaktifkan.");
+                }
             }
         }
 
@@ -155,9 +176,16 @@ namespace CongklakAI
         public void ResetParticipantSession()
         {
             settings.ResetSessionCount();
-            if (nameInputField != null) nameInputField.text = "";
             settings.participantName = "";
+            settings.hasConsentedData = false; // Pastikan partisipan baru memberikan persetujuan ulang
             settings.SaveToPrefs();
+
+            if (nameInputField != null) nameInputField.text = "";
+            if (consentToggle != null) consentToggle.isOn = false;
+            if (ddaToggle != null) ddaToggle.isOn = true; // Reset ke default DDA aktif
+
+            // Jika reset, tampilkan kembali panel input nama
+            if (namePromptPanel != null) namePromptPanel.SetActive(true);
         }
 
         /// <summary>

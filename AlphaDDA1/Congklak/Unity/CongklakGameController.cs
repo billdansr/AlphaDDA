@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using UnityEngine.InputSystem;
 using TMPro;
 using UnityEngine.SceneManagement;
+using UnityEngine.Serialization;
 
 namespace CongklakAI
 {
@@ -96,8 +97,10 @@ namespace CongklakAI
         
 
         [Header("Animation Settings")]
-        public GameObject shellPrefab;   // Assign a small shell/circle prefab
-        public float shellMoveSpeed = 3f; // Speed of the shell moving between holes
+        [FormerlySerializedAs("shellPrefab")]
+        public GameObject piecePrefab;   // Assign a small piece/circle prefab
+        [FormerlySerializedAs("shellMoveSpeed")]
+        public float pieceMoveSpeed = 3f; // Speed of the piece moving between holes
         public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
 
         public string participantName = "Guest";
@@ -138,7 +141,8 @@ namespace CongklakAI
         public float tapScaleFactor = 0.8f; // Skala saat ditekan (Tap Feedback)
 
         [Header("UI References")]
-        public TMP_Text handShellCounterText; // New: Text to display shell count in hand
+        [FormerlySerializedAs("handShellCounterText")]
+        public TMP_Text handPieceCounterText; // New: Text to display piece count in hand
         public TMP_Text[] holeTexts; // Using TextMeshPro for higher quality
         public TMP_Text statusText;  // Optional: To show whose turn it is
         public Transform[] holeTransforms; // Drag your 16 Sprite Holes here
@@ -148,8 +152,8 @@ namespace CongklakAI
         private bool isInteracting = false;
         private int pendingMove = -1;
         private Camera mainCamera;
-        private List<GameObject>[] holeShells;
-        private Vector3 shellBaseScale = Vector3.one;
+        private List<GameObject>[] holePieces;
+        private Vector3 pieceBaseScale = Vector3.one;
         private GameObject[] selectionGlows;
         private bool isSyncingLogs = false;
         private Coroutine statusAnimationCoroutine;
@@ -159,6 +163,16 @@ namespace CongklakAI
         {
             // Seed true randomness using system ticks to prevent repetitive Editor patterns
             UnityEngine.Random.InitState((int)System.DateTime.Now.Ticks);
+
+            // Research Safety Check: Warn if Google Form IDs are missing
+            if (settings != null && settings.hasConsentedData && !isP2Human)
+            {
+                for (int i = 0; i < entryIds.Length; i++)
+                {
+                    if (string.IsNullOrEmpty(entryIds[i]))
+                        Debug.LogWarning($"[Research] Entry ID at index {i} is missing! Data for {entryIds.GetType().GetFields()[i].Name} will not be uploaded.");
+                }
+            }
 
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             
@@ -196,8 +210,8 @@ namespace CongklakAI
             // Clear DDA's persistent win score queue from previous games/sessions
             CongklakAI.AlphaDDA_MCTS.ResetDDA();
 
-            // Inisialisasi list untuk menampung objek shell di setiap lubang
-            holeShells = new List<GameObject>[16];
+            // Inisialisasi list untuk menampung objek piece di setiap lubang
+            holePieces = new List<GameObject>[16];
 
             // Cek apakah array sudah di-assign di Inspector
             if (holeTransforms == null || holeTransforms.Length != 16 || holeTexts == null || holeTexts.Length != 16)
@@ -207,20 +221,20 @@ namespace CongklakAI
                 return;
             }
 
-            for (int i = 0; i < 16; i++) holeShells[i] = new List<GameObject>();
+            for (int i = 0; i < 16; i++) holePieces[i] = new List<GameObject>();
 
-            if (shellPrefab != null)
-                shellBaseScale = shellPrefab.transform.localScale;
+            if (piecePrefab != null)
+                pieceBaseScale = piecePrefab.transform.localScale;
 
             mainCamera = Camera.main;
             game = new CongklakEngine(7);
-            UpdateAllHoleVisuals(); // Spawn shell sesuai initial shells
+            UpdateAllHoleVisuals(); // Spawn piece sesuai initial pieces
             UpdateUI(); 
             AlignUIToWorld(); // Snap UI to the sprites
             
-            if (handShellCounterText != null)
+            if (handPieceCounterText != null)
             {
-                handShellCounterText.gameObject.SetActive(false); // Hide initially
+                handPieceCounterText.gameObject.SetActive(false); // Hide initially
             }
 
             // Inisialisasi Selection Glows dari Child (Mobile First)
@@ -332,7 +346,8 @@ namespace CongklakAI
 
                 foreach (string line in lines)
                 {
-                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("Participant")) continue;
+                    // Gunakan StringComparison.OrdinalIgnoreCase agar filter tidak meleset karena perbedaan huruf besar/kecil
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("participant", System.StringComparison.OrdinalIgnoreCase)) continue;
 
                     string[] data = line.Split(',');
                     yield return StartCoroutine(SendRowToGoogle(data));
@@ -634,13 +649,13 @@ namespace CongklakAI
 
         private IEnumerator ExecuteMove(int move)
         {
-            if (shellPrefab == null)
+            if (piecePrefab == null)
             {
-                Debug.LogError("[Game] Shell Prefab belum di-assign di Inspector!");
+                Debug.LogError("[Game] Piece Prefab belum di-assign di Inspector!");
                 yield break;
             }
 
-            GameObject handShell = null;
+            GameObject handPiece = null;
             float zOffset = -0.5f; 
             int lastHoleIdx = -1;
             int storeIdx = (game.currentPlayer == 1) ? 7 : 15;
@@ -648,26 +663,26 @@ namespace CongklakAI
 
             // 1. Initial Pickup: Ambil dari lubang awal (Start Hole)
             int startHole = (game.currentPlayer == 1) ? move : move + 8;
-            int initialShells = game.board[startHole];
+            int initialPieces = game.board[startHole];
 
-            handShell = new GameObject("HandGroup");
-            handShell.transform.position = holeTransforms[startHole].position;
+            handPiece = new GameObject("HandGroup");
+            handPiece.transform.position = holeTransforms[startHole].position;
 
-            if (handShellCounterText != null)
+            if (handPieceCounterText != null)
             {
-                handShellCounterText.color = (game.currentPlayer == 1) ? p1GlowColor : p2GlowColor;
-                handShellCounterText.text = initialShells.ToString();
-                handShellCounterText.gameObject.SetActive(true);
+                handPieceCounterText.color = (game.currentPlayer == 1) ? p1GlowColor : p2GlowColor;
+                handPieceCounterText.text = initialPieces.ToString();
+                handPieceCounterText.gameObject.SetActive(true);
 
                 if (handTextPunchCoroutine != null) StopCoroutine(handTextPunchCoroutine);
-                handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handShellCounterText.transform));
+                handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handPieceCounterText.transform));
             }
 
-            yield return StartCoroutine(AnimatePickup(startHole, handShell, true));
+            yield return StartCoroutine(AnimatePickup(startHole, handPiece, true));
             bool isFirstDropAfterPickup = true; // Flag untuk gerakan pertama
 
             // 2. Main Loop: Distribusi Bidak
-            foreach (var (holeIdx, remainingShells) in game.PlayAction(move))
+            foreach (var (holeIdx, remainingPieces) in game.PlayAction(move))
             {
                 if (holeTransforms == null || holeIdx >= holeTransforms.Length || holeTransforms[holeIdx] == null)
                 {
@@ -680,23 +695,23 @@ namespace CongklakAI
                 {
                     if (game.board[storeIdx] > lastStoreCount)
                     {
-                        yield return StartCoroutine(AnimateCapture(holeIdx, handShell));
-                        handShell = null;
-                        if (handShellCounterText != null) handShellCounterText.gameObject.SetActive(false);
+                        yield return StartCoroutine(AnimateCapture(holeIdx, handPiece));
+                        handPiece = null;
+                        if (handPieceCounterText != null) handPieceCounterText.gameObject.SetActive(false);
                     }
                     else
                     {
-                        yield return StartCoroutine(AnimatePickup(holeIdx, handShell, false));
+                        yield return StartCoroutine(AnimatePickup(holeIdx, handPiece, false));
                         isFirstDropAfterPickup = true; // Set ulang flag karena baru saja ambil biji lagi
                         UpdateAllHoleVisuals();
                         UpdateUI();
                         
                         // Update Hand Text SETELAH ambil biji (Jalan Terus)
-                        if (handShellCounterText != null)
+                        if (handPieceCounterText != null)
                         {
-                            handShellCounterText.text = remainingShells.ToString();
+                            handPieceCounterText.text = remainingPieces.ToString();
                             if (handTextPunchCoroutine != null) StopCoroutine(handTextPunchCoroutine);
-                            handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handShellCounterText.transform));
+                            handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handPieceCounterText.transform));
                         }
                     }
 
@@ -706,31 +721,31 @@ namespace CongklakAI
                 Vector3 targetPos = holeTransforms[holeIdx].position;
                 targetPos.z = zOffset;
                 
-                Vector3 startPos = handShell.transform.position;
+                Vector3 startPos = handPiece.transform.position;
                 float distance = Vector3.Distance(startPos, targetPos);
                 
                 // Gunakan durasi tetap untuk drop pertama (simetris dengan pickup), dan kecepatan linear untuk drop selanjutnya
-                float duration = isFirstDropAfterPickup ? handTravelDuration : (distance / shellMoveSpeed);
+                float duration = isFirstDropAfterPickup ? handTravelDuration : (distance / pieceMoveSpeed);
                 isFirstDropAfterPickup = false; // Reset flag setelah drop pertama dilakukan
                 
                 float elapsed = 0;
 
                 while (elapsed < duration)
                 {
-                    handShell.transform.position = Vector3.Lerp(startPos, targetPos, elapsed / duration);
+                    handPiece.transform.position = Vector3.Lerp(startPos, targetPos, elapsed / duration);
                     elapsed += Time.deltaTime;
                     yield return null;
                 }
-                handShell.transform.position = targetPos;
+                handPiece.transform.position = targetPos;
 
                 // Sinkronisasi Visual Drop: Kurangi prefab di tangan agar sesuai data engine
-                if (handShell.transform.childCount > remainingShells)
+                if (handPiece.transform.childCount > remainingPieces)
                 {
-                    int toDestroy = handShell.transform.childCount - remainingShells;
+                    int toDestroy = handPiece.transform.childCount - remainingPieces;
                     for (int i = 0; i < toDestroy; i++)
                     {
-                        if (handShell.transform.childCount > 0)
-                            Destroy(handShell.transform.GetChild(0).gameObject);
+                        if (handPiece.transform.childCount > 0)
+                            Destroy(handPiece.transform.GetChild(0).gameObject);
                     }
                 }
                 
@@ -741,11 +756,11 @@ namespace CongklakAI
                 UpdateUI();
 
                 // Update Hand Text SETELAH sinkronisasi papan agar sinkron secara visual
-                if (handShellCounterText != null)
+                if (handPieceCounterText != null)
                 {
-                    handShellCounterText.text = remainingShells.ToString();
+                    handPieceCounterText.text = remainingPieces.ToString();
                     if (handTextPunchCoroutine != null) StopCoroutine(handTextPunchCoroutine);
-                    handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handShellCounterText.transform));
+                    handTextPunchCoroutine = StartCoroutine(AnimatePunchScale(handPieceCounterText.transform));
                 }
 
                 yield return new WaitForSeconds(stepDelay);
@@ -754,14 +769,14 @@ namespace CongklakAI
                 lastStoreCount = game.board[storeIdx];
             }
 
-            if (handShell != null) Destroy(handShell);
-            if (handShellCounterText != null)
+            if (handPiece != null) Destroy(handPiece);
+            if (handPieceCounterText != null)
             {
-                handShellCounterText.gameObject.SetActive(false); // Hide counter at the end of the move
+                handPieceCounterText.gameObject.SetActive(false); // Hide counter at the end of the move
             }
         }
 
-        private IEnumerator AnimateCapture(int landingHoleIdx, GameObject lastDroppedShell)
+        private IEnumerator AnimateCapture(int landingHoleIdx, GameObject lastDroppedPiece)
         {
             string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
             SetStatus($"{playerLabel} {settings.termCapture}");
@@ -773,27 +788,27 @@ namespace CongklakAI
             int storeIdx = (game.currentPlayer == 1) ? 7 : 15;
             Transform handTarget = (game.currentPlayer == 1) ? p1HandTarget : p2HandTarget;
 
-            // 1. Ambil semua shell yang akan dipindahkan ke lumbung
+            // 1. Ambil semua piece yang akan dipindahkan ke lumbung
             List<GameObject> capturedObjects = new List<GameObject>();
 
             // Ambil dari lubang lawan (opposite)
-            if (holeShells[oppositeIdx].Count > 0)
+            if (holePieces[oppositeIdx].Count > 0)
             {
-                capturedObjects.AddRange(holeShells[oppositeIdx]);
-                holeShells[oppositeIdx].Clear();
+                capturedObjects.AddRange(holePieces[oppositeIdx]);
+                holePieces[oppositeIdx].Clear();
             }
 
             // Ambil dari lubang sendiri (yang baru saja diisi)
-            if (holeShells[landingHoleIdx].Count > 0)
+            if (holePieces[landingHoleIdx].Count > 0)
             {
-                capturedObjects.AddRange(holeShells[landingHoleIdx]);
-                holeShells[landingHoleIdx].Clear();
+                capturedObjects.AddRange(holePieces[landingHoleIdx]);
+                holePieces[landingHoleIdx].Clear();
             }
             
-            // Tambahkan shell sisa dari visual tangan (jika ada)
-            if (lastDroppedShell != null)
+            // Tambahkan piece sisa dari visual tangan (jika ada)
+            if (lastDroppedPiece != null)
             {
-                foreach (Transform child in lastDroppedShell.transform)
+                foreach (Transform child in lastDroppedPiece.transform)
                     capturedObjects.Add(child.gameObject);
                 
                 foreach (var obj in capturedObjects) obj.transform.SetParent(null);
@@ -801,7 +816,7 @@ namespace CongklakAI
 
             if (capturedObjects.Count == 0) yield break;
 
-            // Play swoosh sound when moving captured shells to hand
+            // Play swoosh sound when moving captured pieces to hand
             if (audioSource != null && settings != null && settings.swooshSound != null)
                 audioSource.PlayOneShot(settings.swooshSound, settings.sfxVolume);
 
@@ -820,7 +835,7 @@ namespace CongklakAI
                 {
                     if (obj == null) continue;
                     obj.transform.position = Vector3.Lerp(obj.transform.position, startHandPos, t);
-                    obj.transform.localScale = shellBaseScale * scale;
+                    obj.transform.localScale = pieceBaseScale * scale;
                 }
                 elapsed += Time.deltaTime;
                 yield return null;
@@ -836,7 +851,7 @@ namespace CongklakAI
                 {
                     if (obj == null) continue;
                     obj.transform.position = Vector3.Lerp(startHandPos, storePos, t);
-                    obj.transform.localScale = Vector3.Lerp(shellBaseScale * 1.5f, shellBaseScale, t);
+                    obj.transform.localScale = Vector3.Lerp(pieceBaseScale * 1.5f, pieceBaseScale, t);
                 }
                 elapsed += Time.deltaTime;
                 yield return null;
@@ -853,7 +868,7 @@ namespace CongklakAI
             UpdateUI();
         }
 
-        private IEnumerator AnimatePickup(int holeIdx, GameObject currentHandShell, bool isInitial)
+        private IEnumerator AnimatePickup(int holeIdx, GameObject currentHandPiece, bool isInitial)
         {
             if (!isInitial)
             {
@@ -868,13 +883,13 @@ namespace CongklakAI
             Vector3 targetHandPos = handTarget != null ? handTarget.position : holeTransforms[holeIdx].position + Vector3.up * 1.5f;
             targetHandPos.z = -0.5f;
 
-            // 1. Kumpulkan semua visual shell di lubang tersebut (termasuk yang baru jatuh)
-            List<GameObject> pickedObjects = new List<GameObject>(holeShells[holeIdx]);
-            holeShells[holeIdx].Clear(); // Kosongkan list agar tidak terhapus ganda oleh sistem visual
+            // 1. Kumpulkan semua visual piece di lubang tersebut (termasuk yang baru jatuh)
+            List<GameObject> pickedObjects = new List<GameObject>(holePieces[holeIdx]);
+            holePieces[holeIdx].Clear(); // Kosongkan list agar tidak terhapus ganda oleh sistem visual
             
             if (pickedObjects.Count == 0) yield break;
 
-            // Play swoosh sound when picking up shells
+            // Play swoosh sound when picking up pieces
             if (audioSource != null && settings != null && settings.swooshSound != null)
                 audioSource.PlayOneShot(settings.swooshSound, settings.sfxVolume);
 
@@ -890,21 +905,21 @@ namespace CongklakAI
                 {
                     if (obj == null) continue;
                     obj.transform.position = Vector3.Lerp(obj.transform.position, targetHandPos, t);
-                    obj.transform.localScale = shellBaseScale * scale;
+                    obj.transform.localScale = pieceBaseScale * scale;
                 }
                 elapsed += Time.deltaTime;
                 yield return null;
             }
 
             // 3. Pindahkan objek ke dalam wadah tangan (Container)
-            currentHandShell.transform.position = targetHandPos;
+            currentHandPiece.transform.position = targetHandPos;
             foreach (var obj in pickedObjects)
             {
-                obj.transform.SetParent(currentHandShell.transform);
+                obj.transform.SetParent(currentHandPiece.transform);
                 
                 // Berikan posisi acak lokal yang sangat kecil agar terlihat saling menyentuh di tangan
                 obj.transform.localPosition = (Vector3)(Random.insideUnitCircle * 0.05f);
-                obj.transform.localScale = shellBaseScale;
+                obj.transform.localScale = pieceBaseScale;
 
                 // Pastikan biji di tangan berada paling depan secara visual
                 if (obj.TryGetComponent<SpriteRenderer>(out var sr)) sr.sortingOrder = 20;
@@ -929,7 +944,7 @@ namespace CongklakAI
                 {
                     Vector3 worldPos = holeTransforms[i].position;
 
-                    // Terapkan Offset berdasarkan posisi lubang agar tidak menutupi biji (kewuk)
+                    // Terapkan Offset berdasarkan posisi lubang agar tidak menutupi biji (piece)
                     if (i >= 0 && i <= 6) // Lubang Bawah (P1)
                         worldPos += Vector3.down * uiVerticalOffset;
                     else if (i == 7) // Store P1
@@ -1086,11 +1101,11 @@ namespace CongklakAI
         }
 
         /// <summary>
-        /// Sinkronisasi jumlah objek shell visual dengan data di CongklakEngine
+        /// Sinkronisasi jumlah objek piece visual dengan data di CongklakEngine
         /// </summary>
         private void UpdateAllHoleVisuals()
         {
-            if (shellPrefab == null) return;
+            if (piecePrefab == null) return;
 
             for (int i = 0; i < 16; i++)
             {
@@ -1101,16 +1116,16 @@ namespace CongklakAI
         private void UpdateSingleHoleVisual(int holeIdx)
         {
             if (holeIdx < 0 || holeIdx >= holeTransforms.Length || holeTransforms[holeIdx] == null) return;
-            if (holeShells == null || holeShells[holeIdx] == null) return;
+            if (holePieces == null || holePieces[holeIdx] == null) return;
 
             int targetCount = game.board[holeIdx];
-            List<GameObject> currentShells = holeShells[holeIdx];
+            List<GameObject> currentPieces = holePieces[holeIdx];
 
             // Gunakan radius yang berbeda jika ini adalah Store (Lumbung)
             float r = (holeIdx == 7 || holeIdx == 15) ? storeRadius : holeRadius;
 
-            // Tambah shell jika kurang
-            while (currentShells.Count < targetCount)
+            // Tambah piece jika kurang
+            while (currentPieces.Count < targetCount)
             {
                 Vector3 randomOffset = (Vector3)(Random.insideUnitCircle * r);
                 Vector3 spawnPos = holeTransforms[holeIdx].position + randomOffset;
@@ -1120,15 +1135,15 @@ namespace CongklakAI
                     Quaternion.Euler(0, 0, Random.Range(0f, 360f)) : 
                     Quaternion.identity;
 
-                GameObject newShell = Instantiate(shellPrefab, spawnPos, rotation, holeTransforms[holeIdx]);
-                currentShells.Add(newShell);
+                GameObject newPiece = Instantiate(piecePrefab, spawnPos, rotation, holeTransforms[holeIdx]);
+                currentPieces.Add(newPiece);
             }
 
-            // Hapus shell jika lebih (misal saat diambil atau dimakan)
-            while (currentShells.Count > targetCount)
+            // Hapus piece jika lebih (misal saat diambil atau dimakan)
+            while (currentPieces.Count > targetCount)
             {
-                GameObject toRemove = currentShells[0];
-                currentShells.RemoveAt(0);
+                GameObject toRemove = currentPieces[0];
+                currentPieces.RemoveAt(0);
                 Destroy(toRemove);
             }
         }

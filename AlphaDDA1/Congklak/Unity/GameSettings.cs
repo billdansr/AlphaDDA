@@ -89,6 +89,7 @@ namespace CongklakAI
         /// <summary>
         /// Reset session count ke 0. Berguna jika partisipan baru menggunakan perangkat yang sama.
         /// </summary>
+        [ContextMenu("Reset Research Data")]
         public void ResetSessionCount()
         {
             sessionCount = 0;
