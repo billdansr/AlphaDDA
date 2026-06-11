@@ -81,7 +81,6 @@ namespace CongklakAI
         public float sensitivityA = 1.5f; // Hasil Grid Search Terbaik
         public float offsetX0 = -2.5f;    // Hasil Grid Search Terbaik
         public int maxSims = 300;
-        public float stepDelay = 0.12f; // Time between shell drops (Optimized for 1.6x speed)
         #endregion
 
         [Header("Visual Tuning")]
@@ -99,6 +98,7 @@ namespace CongklakAI
         [Header("Animation Settings")]
         [FormerlySerializedAs("shellPrefab")]
         public GameObject piecePrefab;   // Assign a small piece/circle prefab
+        public float stepDelay = 0.12f; // Time between shell drops (Optimized for 1.6x speed)
         [FormerlySerializedAs("shellMoveSpeed")]
         public float pieceMoveSpeed = 5f; // Speed of the piece moving between holes (Increased from 3f)
         public float handTravelDuration = 0.3f; // Durasi gerakan tangan naik/turun (Faster from 0.5s)
