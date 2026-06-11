@@ -81,7 +81,7 @@ namespace CongklakAI
         public float sensitivityA = 1.5f; // Hasil Grid Search Terbaik
         public float offsetX0 = -2.5f;    // Hasil Grid Search Terbaik
         public int maxSims = 300;
-        public float stepDelay = 0.2f; // Time between shell drops
+        public float stepDelay = 0.12f; // Time between shell drops (Optimized for 1.6x speed)
         #endregion
 
         [Header("Visual Tuning")]
@@ -100,8 +100,8 @@ namespace CongklakAI
         [FormerlySerializedAs("shellPrefab")]
         public GameObject piecePrefab;   // Assign a small piece/circle prefab
         [FormerlySerializedAs("shellMoveSpeed")]
-        public float pieceMoveSpeed = 3f; // Speed of the piece moving between holes
-        public float handTravelDuration = 0.5f; // Durasi gerakan tangan naik/turun (Hole <-> Hand)
+        public float pieceMoveSpeed = 5f; // Speed of the piece moving between holes (Increased from 3f)
+        public float handTravelDuration = 0.3f; // Durasi gerakan tangan naik/turun (Faster from 0.5s)
 
         public string participantName = "Guest";
 
@@ -518,7 +518,7 @@ namespace CongklakAI
                     // LOG AI MOVE (Capture DDA Metrics)
                     LogMove(playerTag, aiMove, mcts.lastV, mcts.lastSims, mcts.lastPi, game.board[7], game.board[15], false);
 
-                    yield return new WaitForSeconds(0.5f); // Cosmetic delay
+                    yield return new WaitForSeconds(0.2f); // Faster Cosmetic delay
                     if (aiMove != -1)
                     {
                         SetStatus($"{playerLabel} {settings.termMoving}");
@@ -782,7 +782,7 @@ namespace CongklakAI
             SetStatus($"{playerLabel} {settings.termCapture}");
             
             // Tambahkan jeda awal agar pemain bisa melihat posisi jatuh terakhir
-            yield return new WaitForSeconds(0.8f);
+            yield return new WaitForSeconds(0.4f); // Reduced delay
 
             int oppositeIdx = 14 - landingHoleIdx;
             int storeIdx = (game.currentPlayer == 1) ? 7 : 15;
@@ -876,7 +876,7 @@ namespace CongklakAI
                 SetStatus($"{playerLabel} {settings.termContinue}");
                 
                 // Jeda singkat agar transisi pengambilan biji tidak terlalu mendadak
-                yield return new WaitForSeconds(0.4f);
+                yield return new WaitForSeconds(0.2f); // Faster transition
             }
 
             Transform handTarget = (game.currentPlayer == 1) ? p1HandTarget : p2HandTarget;
