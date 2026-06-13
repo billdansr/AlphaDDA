@@ -72,7 +72,7 @@ class Train():
             current_dir = os.getcwd()
             logging.info(f"Searching for checkpoints in: {current_dir}")
             for f in glob.glob("checkpoint_*.model"):
-                match = re.search(r'checkpoint_(\d+).model', f)
+                match = re.search(r'checkpoint_(\d+)\.model', f)
                 if match:
                     it = int(match.group(1))
                     if it > max_num_iter:
