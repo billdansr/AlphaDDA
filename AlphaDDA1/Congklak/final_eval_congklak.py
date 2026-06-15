@@ -1,6 +1,6 @@
 #-------------------------------------------------------------------
 # final_eval_congklak.py
-# Pengujian Akhir AlphaDDA1 dengan Parameter Optimal (A=1.0, X0=-2.0)
+# Pengujian Akhir AlphaDDA1 dengan Parameter Optimal (A=1.5, X0=-2.5)
 #-------------------------------------------------------------------
 import os
 from test_dda import GridEvaluator
@@ -15,8 +15,8 @@ if __name__ == '__main__':
     model_path = os.path.join(base_path, "checkpoint.model")
     
     # 2. Parameter Terbaik Hasil Grid Search
-    BEST_A = 1.0
-    BEST_X0 = -2.0
+    BEST_A = 1.5
+    BEST_X0 = -2.5
     NUM_GAMES = 50 # Menaikkan jumlah gim agar data lebih solid untuk Bab IV
     
     opponents = ["random", "mcts", "alphazero"]
