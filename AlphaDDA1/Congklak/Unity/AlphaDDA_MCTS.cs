@@ -59,18 +59,18 @@ namespace CongklakAI
         private float cpuct = 1.25f;
         private float rnd_rate = 0.2f;
         private float temp = 1.0f;
-        private int openingLimit = 0; // opening_test = 0
+        private int openingLimit = 20; // Sesuai teks skripsi: 20 langkah pembukaan untuk eksplorasi
 
         // DDA parameters — faithfully from PeerJ-CS 1123 (Fujita, 2022)
         private int N_MAX = 300;
-        private float A = 10.0f;
-        private float X0 = 0.0f;
+        private float A = 1.5f;   // Default Congklak (calibrated)
+        private float X0 = -2.5f; // Default Congklak (calibrated)
         private int numMean = 1;
         
         // Static queue to persist win scores across turns (for numMean > 1)
         private static Queue<float> winScoreQueue = new Queue<float>();
 
-        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 10.0f, float X0 = 0.0f, int N_MAX = 300, int numMean = 1)
+        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 1.5f, float X0 = -2.5f, int N_MAX = 300, int numMean = 1)
         {
             this.root = new MCTSNode(game.board, game.currentPlayer);
             this.brain = brain;
@@ -272,12 +272,13 @@ namespace CongklakAI
 
             if (turnCount > openingLimit)
             {
-                // Deterministic: Max visits
+                // Fase Eksploitasi: Memilih langkah terbaik secara deterministik berdasarkan kunjungan terbanyak
                 return root.children.OrderByDescending(c => c.nsa).First().move.Value;
             }
             else
             {
-                // Softmax exploration for opening moves
+                // Fase Eksplorasi: Memilih langkah secara probabilistik (Softmax) 
+                // untuk menghindari pengulangan pola langkah yang sama di setiap game.
                 float[] visits = root.children.Select(c => (float)c.nsa).ToArray();
                 float[] probs = Softmax(visits);
                 
