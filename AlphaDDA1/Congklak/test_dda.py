@@ -80,9 +80,9 @@ class GridEvaluator():
                 az.num_moves = turn
                 move = az.Run()
             elif current_player_type == "alphadda1":
-                # Use custom A and X0 if provided, else use defaults (Optimal for Congklak: A=1.0, X0=-2.0)
-                a_val = custom_A if custom_A is not None else 1.0
-                x0_val = custom_X0 if custom_X0 is not None else -2.0
+                # Use custom A and X0 if provided, else use defaults (Optimal for Congklak: A=1.5, X0=-2.5)
+                a_val = custom_A if custom_A is not None else 1.5
+                x0_val = custom_X0 if custom_X0 is not None else -2.5
                 adda = AlphaDDA1MCTS(game=g, net=net, params=params, num_mean=self.num_mean, A=a_val, X0=x0_val, N_MAX=self.N_MAX)
                 adda.num_moves = turn
                 move = adda.Run()
@@ -173,7 +173,21 @@ if __name__ == '__main__':
     except RuntimeError:
         pass
 
-    evaluator = GridEvaluator(num_mean=n_mean, N_MAX=n_max)
+    # Deteksi Path Model (Colab vs Local)
+    base_path = "./"
+    if os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
+        base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+
+    # Cari model (Prioritas: checkpoint.model -> latest numbered checkpoint seperti checkpoint_75.model)
+    model_path = os.path.join(base_path, "checkpoint.model")
+    if not os.path.exists(model_path):
+        checkpoints = [f for f in os.listdir(base_path) if f.startswith("checkpoint_") and f.endswith(".model")]
+        if checkpoints:
+            checkpoints.sort(key=lambda x: int(x.split('_')[1].split('.')[0]), reverse=True)
+            model_path = os.path.join(base_path, checkpoints[0])
+            print(f"Model checkpoint.model tidak ditemukan. Menggunakan model terbaru: {model_path}")
+
+    evaluator = GridEvaluator(num_mean=n_mean, N_MAX=n_max, model_path=model_path)
     
     # Run the grid search pairings
     print(f"--- Starting Bulk Grid Evaluation (N_MAX={n_max}, Window={n_mean}) ---", flush=True)
