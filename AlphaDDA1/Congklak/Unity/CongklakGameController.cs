@@ -98,6 +98,7 @@ namespace CongklakAI
         [Header("Animation Settings")]
         [FormerlySerializedAs("shellPrefab")]
         public GameObject piecePrefab;   // Assign a small piece/circle prefab
+        public ParticleSystem comboParticlePrefab; // Prefab partikel untuk efek jatuh
         public float stepDelay = 0.12f; // Time between shell drops (Optimized for 1.6x speed)
         [FormerlySerializedAs("shellMoveSpeed")]
         public float pieceMoveSpeed = 5f; // Speed of the piece moving between holes (Increased from 3f)
@@ -572,8 +573,15 @@ namespace CongklakAI
                 
                 if (gameOverDetailsText != null)
                 {
-                    // P1 selalu Human (Opsi A), P2 selalu AI
-                    gameOverDetailsText.text = $"{settings.termFinalScore}\nP1: {game.board[7]}  |  P2: {game.board[15]}\n{settings.termTotalTurns}: {turnCount}\n{settings.termP1FirstInfo}";
+                    string p1Hex = ColorUtility.ToHtmlStringRGB(p1GlowColor);
+                    string p2Hex = ColorUtility.ToHtmlStringRGB(p2GlowColor);
+
+                    // Format tampilan: Judul besar, Skor berwarna dengan tebal, dan info giliran yang lebih kecil
+                    gameOverDetailsText.text = 
+                        $"<size=120%><b>{settings.termFinalScore}</b></size>\n\n" +
+                        $"<color=#{p1Hex}>P1 (Human):</color> <b>{game.board[7]}</b>\n" +
+                        $"<color=#{p2Hex}>P2 (AI):</color> <b>{game.board[15]}</b>\n\n" +
+                        $"<size=85%>{settings.termTotalTurns}: {turnCount}</size>";
                 }
                 
                 // Check if synchronization will actually happen (skipped for Local PvP or no consent)
@@ -655,11 +663,13 @@ namespace CongklakAI
                 yield break;
             }
 
+            string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
             GameObject handPiece = null;
             float zOffset = -0.5f; 
             int lastHoleIdx = -1;
             int storeIdx = (game.currentPlayer == 1) ? 7 : 15;
             int lastStoreCount = game.board[storeIdx];
+            int comboCount = 1; // Melacak rantai 'Jalan Terus' dalam satu giliran
 
             // 1. Initial Pickup: Ambil dari lubang awal (Start Hole)
             int startHole = (game.currentPlayer == 1) ? move : move + 8;
@@ -684,6 +694,9 @@ namespace CongklakAI
             // 2. Main Loop: Distribusi Bidak
             foreach (var (holeIdx, remainingPieces) in game.PlayAction(move))
             {
+                // Reset pitch ke normal di awal setiap langkah agar SFX lain tidak terpengaruh
+                if (audioSource != null) audioSource.pitch = 1f;
+
                 if (holeTransforms == null || holeIdx >= holeTransforms.Length || holeTransforms[holeIdx] == null)
                 {
                     Debug.LogError($"[Game] holeTransforms[{holeIdx}] tidak ditemukan!");
@@ -701,6 +714,9 @@ namespace CongklakAI
                     }
                     else
                     {
+                        comboCount++;
+                        SetStatus($"{playerLabel} {settings.termContinue} <size=120%><b>x{comboCount}</b></size>");
+
                         yield return StartCoroutine(AnimatePickup(holeIdx, handPiece, false));
                         isFirstDropAfterPickup = true; // Set ulang flag karena baru saja ambil biji lagi
                         UpdateAllHoleVisuals();
@@ -720,14 +736,20 @@ namespace CongklakAI
                 }
                 Vector3 targetPos = holeTransforms[holeIdx].position;
                 targetPos.z = zOffset;
-                
+
+                // Hitung faktor kecepatan dinamis: 
+                // 1. Berdasarkan jumlah biji (semakin banyak semakin cepat)
+                // 2. Berdasarkan momentum combo (semakin lama jalan, semakin agresif)
+                float speedFactor = Mathf.Clamp(1f + (remainingPieces * 0.05f) + (comboCount * 0.15f), 1f, 6f);
+                float dynamicMoveSpeed = pieceMoveSpeed * speedFactor;
+
                 Vector3 startPos = handPiece.transform.position;
                 float distance = Vector3.Distance(startPos, targetPos);
                 
-                // Gunakan durasi tetap untuk drop pertama (simetris dengan pickup), dan kecepatan linear untuk drop selanjutnya
-                float duration = isFirstDropAfterPickup ? handTravelDuration : (distance / pieceMoveSpeed);
+                // Gunakan durasi yang disesuaikan dengan speedFactor agar transisi tetap mulus
+                float duration = isFirstDropAfterPickup ? (handTravelDuration / speedFactor) : (distance / dynamicMoveSpeed);
                 isFirstDropAfterPickup = false; // Reset flag setelah drop pertama dilakukan
-                
+
                 float elapsed = 0;
 
                 while (elapsed < duration)
@@ -750,7 +772,15 @@ namespace CongklakAI
                 }
                 
                 if (audioSource != null && settings != null && settings.dropSound != null)
+                {
+                    // Terapkan kenaikan pitch berdasarkan kecepatan dan combo
+                    audioSource.pitch = 1f + (speedFactor - 1f) * 0.1f + (comboCount * 0.05f);
                     audioSource.PlayOneShot(settings.dropSound, settings.sfxVolume);
+                }
+
+                // Pemicu feedback haptic dan partikel combo (Berdiri sendiri agar tetap muncul meski audio off)
+                TriggerHapticFeedback(comboCount);
+                TriggerComboParticle(targetPos, comboCount);
 
                 UpdateAllHoleVisuals();
                 UpdateUI();
@@ -770,6 +800,9 @@ namespace CongklakAI
             }
 
             if (handPiece != null) Destroy(handPiece);
+            // Kembalikan pitch ke normal untuk suara kemenangan/event lainnya
+            if (audioSource != null) audioSource.pitch = 1f;
+
             if (handPieceCounterText != null)
             {
                 handPieceCounterText.gameObject.SetActive(false); // Hide counter at the end of the move
@@ -1146,6 +1179,70 @@ namespace CongklakAI
                 currentPieces.RemoveAt(0);
                 Destroy(toRemove);
             }
+        }
+
+        /// <summary>
+        /// Memicu getaran pada perangkat mobile. Durasi getaran meningkat seiring jumlah combo.
+        /// </summary>
+        private void TriggerHapticFeedback(int combo)
+        {
+            if (settings == null || !settings.isHapticsEnabled) return;
+
+            if (Application.isEditor)
+            {
+                Debug.Log($"[Haptic Simulation] Getaran combo {combo} terpanggil.");
+                return;
+            }
+
+            #if UNITY_ANDROID
+            try
+            {
+                using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (AndroidJavaObject currentActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (AndroidJavaObject vibrator = currentActivity.Call<AndroidJavaObject>("getSystemService", "vibrator"))
+                {
+                    if (vibrator.Call<bool>("hasVibrator"))
+                    {
+                        // Durasi getaran dalam milidetik (10ms - 80ms)
+                        // Semakin tinggi combo, semakin terasa 'tajam' getarannya.
+                        long duration = Mathf.Clamp(10 + (combo * 7), 10, 80);
+                        vibrator.Call("vibrate", duration);
+                    }
+                }
+            }
+            catch { Handheld.Vibrate(); } // Fallback jika bridge gagal
+            #elif UNITY_IOS
+            // iOS menggunakan haptic feedback standar
+            Handheld.Vibrate();
+            #endif
+        }
+
+        /// <summary>
+        /// Memunculkan efek partikel dengan warna yang berubah sesuai jumlah combo.
+        /// </summary>
+        private void TriggerComboParticle(Vector3 position, int combo)
+        {
+            if (comboParticlePrefab == null) return;
+
+            // Instansiasi partikel (Gunakan pooling jika untuk rilis publik agar performa lebih ringan)
+            ParticleSystem ps = Instantiate(comboParticlePrefab, position, Quaternion.identity);
+
+            var main = ps.main;
+            Color playerColor = (game.currentPlayer == 1) ? p1GlowColor : p2GlowColor;
+
+            // Memberikan sedikit emisi cahaya (HDR) agar terlihat berpijar di layar mobile
+            // Menggunakan Alpha yang mengecil seiring waktu agar partikel menghilang halus
+            playerColor.a = 0.8f; 
+
+            // Semakin tinggi combo, partikel semakin putih dan terang (Glow effect)
+            float t = Mathf.Clamp01((combo - 1) / 10f);
+            main.startColor = Color.Lerp(playerColor, Color.white, t);
+            
+            // Ukuran sedikit membesar sesuai combo untuk impact visual
+            main.startSize = 0.15f * (1f + (combo * 0.1f)); 
+
+            ps.Play();
+            Destroy(ps.gameObject, main.duration + main.startLifetime.constantMax);
         }
     }
 }
