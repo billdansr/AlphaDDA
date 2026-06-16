@@ -113,6 +113,8 @@ class GridEvaluator():
 
         # Aggregate results
         ai_wins = 0
+        ai_draws = 0
+        ai_losses = 0
         ai_margins = []
         
         for i, (winner, p1_s, p2_s) in enumerate(results):
@@ -125,12 +127,18 @@ class GridEvaluator():
             
             if winner == ai_side:
                 ai_wins += 1
+            elif winner == 0:
+                ai_draws += 1
+            else:
+                ai_losses += 1
 
         total_games = len(results)
         win_rate = (ai_wins / total_games) * 100
-        avg_margin = sum(ai_margins) / len(ai_margins)
+        draw_rate = (ai_draws / total_games) * 100
+        loss_rate = (ai_losses / total_games) * 100
+        avg_margin = sum(ai_margins) / total_games
         
-        print(f"RESULT | WinRate: {win_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
+        print(f"RESULT | Win: {win_rate:.1f}% | Loss: {loss_rate:.1f}% | Draw: {draw_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
         return win_rate, avg_margin
 
     def run_bulk_test_custom(self, target_ai, opponent_type, a_val, x0_val):
@@ -147,16 +155,27 @@ class GridEvaluator():
             results = pool.map(self.play_single_game, schedule)
 
         ai_wins = 0
+        ai_draws = 0
+        ai_losses = 0
         ai_margins = []
         for i, (winner, p1_s, p2_s) in enumerate(results):
             if i % 2 == 0: ai_side = self.params.p1; ai_margins.append(p1_s - p2_s)
             else: ai_side = self.params.p2; ai_margins.append(p2_s - p1_s)
-            if winner == ai_side: ai_wins += 1
+            
+            if winner == ai_side:
+                ai_wins += 1
+            elif winner == 0:
+                ai_draws += 1
+            else:
+                ai_losses += 1
 
-        win_rate = (ai_wins / len(results)) * 100
-        avg_margin = sum(ai_margins) / len(ai_margins)
-        print(f"RESULT | WinRate: {win_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
-        return win_rate, avg_margin
+        total_games = len(results)
+        win_rate = (ai_wins / total_games) * 100 if total_games > 0 else 0.0
+        draw_rate = (ai_draws / total_games) * 100 if total_games > 0 else 0.0
+        loss_rate = (ai_losses / total_games) * 100 if total_games > 0 else 0.0
+        avg_margin = sum(ai_margins) / total_games if total_games > 0 else 0.0
+        print(f"RESULT | Win: {win_rate:.1f}% | Loss: {loss_rate:.1f}% | Draw: {draw_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
+        return win_rate, loss_rate, draw_rate, avg_margin
 
 def net_has_cuda():
     import torch
