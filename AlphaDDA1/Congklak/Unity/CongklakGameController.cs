@@ -78,14 +78,17 @@ namespace CongklakAI
         public bool isP2Human = false;
 
         [Header("Difficulty Parameters")]
+        public float cpuct = 1.25f;       // Match self.cpuct in parameters.py
+        public float temp = 1.0f;        // Match self.Temp in parameters.py
         public float sensitivityA = 1.5f; // Hasil Grid Search Terbaik
-        public float offsetX0 = -2.5f;    // Hasil Grid Search Terbaik
-        public int maxSims = 300;
+        public float offsetX0 = -1.75f;   // Closest verified alternative from grid search for a forgiving -15.0 margin
+        public int maxSims = 400;
+        public int numMean = 1;           // Sync with numMean in AlphaDDA_MCTS and research paper
         #endregion
 
         [Header("Visual Tuning")]
         public float holeRadius = 0.15f; // Radius penyebaran biji di dalam lubang
-        public float storeRadius = 0.35f; // Radius lebih luas khusus untuk lumbung (Store)
+        public float storeRadius = 0.5f; // Increased to accommodate up to 98 pieces without excessive clumping
         public bool useRandomRotation = true;
 
         [Header("UI Offset Settings")]
@@ -507,7 +510,7 @@ namespace CongklakAI
 
                     int aiMove = -1;
                     float activeSensitivity = isDda ? sensitivityA : 0.0f;
-                    AlphaDDA_MCTS mcts = new AlphaDDA_MCTS(game, aiBrain, activeSensitivity, offsetX0, maxSims);
+                    AlphaDDA_MCTS mcts = new AlphaDDA_MCTS(game, aiBrain, activeSensitivity, offsetX0, maxSims, numMean, cpuct, temp);
                     
                     // Run MCTS on main thread via Coroutine (Inference safe)
                     yield return StartCoroutine(mcts.RunCoroutine(turnCount, (move) => aiMove = move));

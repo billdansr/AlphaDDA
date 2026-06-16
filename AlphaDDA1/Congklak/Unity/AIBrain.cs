@@ -33,7 +33,7 @@ namespace CongklakAI
         /// </summary>
         public (float[] pi, float v) Predict(float[,,] state)
         {
-            if (worker == null) return (new float[8], 0);
+            if (worker == null) return (new float[7], 0);
 
             // Input shape is [1, 3, 2, 8]
             TensorShape shape = new(1, 3, 2, 8);

@@ -21,7 +21,7 @@ from AlphaDDA1 import A_MCTS as AlphaDDA1MCTS
 from minimax import Minimax
 
 class GridEvaluator():
-    def __init__(self, num_mean=5, N_MAX=800, model_path="checkpoint.model"):
+    def __init__(self, num_mean=1, N_MAX=400, model_path="checkpoint.model"):
         self.params = Parameters()
         self.num_mean = num_mean
         self.N_MAX = N_MAX
@@ -165,7 +165,7 @@ def net_has_cuda():
 if __name__ == '__main__':
     # Usage: python test_dda_grid.py [num_mean] [N_MAX]
     n_mean = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    n_max = int(sys.argv[2]) if len(sys.argv) > 2 else 300
+    n_max = int(sys.argv[2]) if len(sys.argv) > 2 else 400
     
     # We must use 'spawn' for CUDA multiprocessing compatibility
     try:

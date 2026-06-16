@@ -57,20 +57,19 @@ namespace CongklakAI
         
         // Hyperparameters (matched to parameters.py)
         private float cpuct = 1.25f;
-        private float rnd_rate = 0.2f;
         private float temp = 1.0f;
-        private int openingLimit = 20; // Sesuai teks skripsi: 20 langkah pembukaan untuk eksplorasi
+        private int openingLimit = 0; // Matched to opening_test in parameters.py for inference
 
         // DDA parameters — faithfully from PeerJ-CS 1123 (Fujita, 2022)
-        private int N_MAX = 300;
+        private int N_MAX = 400; // Match num_mcts_sims_test in parameters.py
         private float A = 1.5f;   // Default Congklak (calibrated)
-        private float X0 = -2.5f; // Default Congklak (calibrated)
+        private float X0 = -1.75f; // Adjusted to -1.75 to match verified grid search data
         private int numMean = 1;
         
         // Static queue to persist win scores across turns (for numMean > 1)
         private static Queue<float> winScoreQueue = new Queue<float>();
 
-        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 1.5f, float X0 = -2.5f, int N_MAX = 300, int numMean = 1)
+        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 1.5f, float X0 = -2.5f, int N_MAX = 400, int numMean = 1, float cpuct = 1.25f, float temp = 1.0f)
         {
             this.root = new MCTSNode(game.board, game.currentPlayer);
             this.brain = brain;
@@ -78,6 +77,8 @@ namespace CongklakAI
             this.X0 = X0;
             this.N_MAX = N_MAX;
             this.numMean = numMean;
+            this.cpuct = cpuct;
+            this.temp = temp;
             
             // Note: We don't clear the queue here to allow cross-turn persistence.
             // If starting a brand new game, call ResetDDA()
@@ -183,12 +184,6 @@ namespace CongklakAI
             
             MCTSNode best = null;
             float bestValue = float.NegativeInfinity;
-
-            // Handle random exploration at root (rnd_rate)
-            if (node == root && UnityEngine.Random.value < rnd_rate)
-            {
-                return node.children[UnityEngine.Random.Range(0, node.children.Count)];
-            }
 
             foreach (var child in node.children)
             {

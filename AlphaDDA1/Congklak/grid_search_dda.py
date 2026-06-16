@@ -14,7 +14,7 @@ if __name__ == '__main__':
     x0_list = [-2.5, -2.25, -2.0, -1.75]
     
     fixed_window = 1
-    fixed_n_max = 300
+    fixed_n_max = 400
     target_opponent = "alphazero" # Sesuai protokol Connect4 Fujita
     
     # 1. Setup Absolute Paths (Crucial for multiprocessing in Colab)
