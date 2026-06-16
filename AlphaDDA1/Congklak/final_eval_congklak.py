@@ -2,11 +2,17 @@
 # final_eval_congklak.py
 # Pengujian Akhir AlphaDDA1 dengan Parameter Optimal (A=1.5, X0=-2.5)
 #-------------------------------------------------------------------
-import os, csv, argparse
+import os, csv, argparse, multiprocessing as mp
 from datetime import datetime
 from test_dda import GridEvaluator
 
 if __name__ == '__main__':
+    # Force 'spawn' start method for CUDA compatibility in multiprocessing
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
+
     parser = argparse.ArgumentParser(description="Final Evaluation of AlphaDDA1 Congklak AI.")
     parser.add_argument('--A', type=float, help="Override sensitivity A. If not provided, loads from grid_search_fujita.csv.")
     parser.add_argument('--X0', type=float, help="Override offset X0. If not provided, loads from grid_search_fujita.csv.")
