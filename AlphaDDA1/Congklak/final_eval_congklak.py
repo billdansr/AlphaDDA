@@ -3,6 +3,7 @@
 # Pengujian Akhir AlphaDDA1 dengan Parameter Optimal (A=1.5, X0=-2.5)
 #-------------------------------------------------------------------
 import os, csv, argparse
+from datetime import datetime
 from test_dda import GridEvaluator
 
 if __name__ == '__main__':
@@ -52,17 +53,19 @@ if __name__ == '__main__':
     
     
     
-    opponents = ["random", "mcts", "alphazero"]
+    opponents = ["random", "minimax", "mcts", "alphazero"]
     
     print("="*50)
+    print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"STARTING FINAL EVALUATION")
     print(f"Target Model: {model_path}")
     print(f"Params: A={BEST_A}, X0={BEST_X0}, N_max={N_MAX}{override_status}")
     print("="*50)
 
+    results_to_save = [] # Inisialisasi di luar loop agar semua hasil tersimpan
     for opp in opponents:
         print(f"\n--- Testing against: {opp.upper()} ---")
-        
+
         # Inisialisasi Evaluator
         evaluator = GridEvaluator(
             model_path=model_path,
@@ -72,11 +75,32 @@ if __name__ == '__main__':
         evaluator.num_games = NUM_GAMES
         
         # Jalankan Test menggunakan parameter dinamis
-        win_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", opp, BEST_A, BEST_X0)
+        # run_bulk_test_custom sekarang mengembalikan win_rate, loss_rate, draw_rate, avg_margin
+        win_rate, loss_rate, draw_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", opp, BEST_A, BEST_X0)
         
         print(f"RESULT vs {opp.upper()}:")
-        print(f"Win Rate  : {win_rate}%")
-        print(f"Avg Margin: {avg_margin}")
+        print(f"Win Rate  : {win_rate:.1f}%")
+        print(f"Loss Rate : {loss_rate:.1f}%")
+        print(f"Draw Rate : {draw_rate:.1f}%")
+        print(f"Avg Margin: {avg_margin:+.2f}")
         print("-" * 30)
 
-    print("\n[DONE] Data Final Evaluasi siap dimasukkan ke Tabel Skripsi.")
+        results_to_save.append({
+            "Opponent": opp,
+            "A_sim": BEST_A,
+            "X0": BEST_X0,
+            "WinRate": f"{win_rate:.1f}%",
+            "LossRate": f"{loss_rate:.1f}%",
+            "DrawRate": f"{draw_rate:.1f}%",
+            "AvgMargin": f"{avg_margin:+.2f}",
+            "Timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    # Simpan hasil ke CSV
+    csv_output_file = os.path.join(base_path, f"final_eval_A{BEST_A}_X0{BEST_X0}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+    with open(csv_output_file, mode='w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=["Opponent", "A_sim", "X0", "WinRate", "LossRate", "DrawRate", "AvgMargin", "Timestamp"])
+        writer.writeheader()
+        writer.writerows(results_to_save)
+
+    print(f"\n[DONE] Data Final Evaluasi disimpan ke {csv_output_file}. Siap dimasukkan ke Tabel Skripsi.")
