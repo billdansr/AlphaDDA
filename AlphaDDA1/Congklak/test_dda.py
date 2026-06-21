@@ -158,23 +158,42 @@ class GridEvaluator():
         ai_draws = 0
         ai_losses = 0
         ai_margins = []
+        win_margins = []
+        loss_margins = []
+
         for i, (winner, p1_s, p2_s) in enumerate(results):
-            if i % 2 == 0: ai_side = self.params.p1; ai_margins.append(p1_s - p2_s)
-            else: ai_side = self.params.p2; ai_margins.append(p2_s - p1_s)
+            if i % 2 == 0: 
+                ai_side = self.params.p1
+                margin = p1_s - p2_s
+            else: 
+                ai_side = self.params.p2
+                margin = p2_s - p1_s
+            
+            ai_margins.append(margin)
             
             if winner == ai_side:
                 ai_wins += 1
+                win_margins.append(margin)
             elif winner == 0:
                 ai_draws += 1
             else:
                 ai_losses += 1
+                loss_margins.append(margin)
 
         total_games = len(results)
         win_rate = (ai_wins / total_games) * 100 if total_games > 0 else 0.0
         draw_rate = (ai_draws / total_games) * 100 if total_games > 0 else 0.0
         loss_rate = (ai_losses / total_games) * 100 if total_games > 0 else 0.0
         avg_margin = sum(ai_margins) / total_games if total_games > 0 else 0.0
-        print(f"RESULT | Win: {win_rate:.1f}% | Loss: {loss_rate:.1f}% | Draw: {draw_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
+        
+        avg_win_margin = sum(win_margins) / len(win_margins) if win_margins else 0
+        avg_loss_margin = sum(loss_margins) / len(loss_margins) if loss_margins else 0
+
+        print(f"RESULT vs {opponent_type.upper()} | W: {win_rate:.0f}% L: {loss_rate:.0f}% D: {draw_rate:.0f}%")
+        print(f"  > Avg Total Margin: {avg_margin:+.2f}")
+        print(f"  > Avg Win Margin  : {avg_win_margin:+.2f} (Forgiveness)")
+        print(f"  > Avg Loss Margin : {avg_loss_margin:+.2f} (Opponent Power)")
+        
         return win_rate, loss_rate, draw_rate, avg_margin
 
 def net_has_cuda():

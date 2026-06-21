@@ -57,7 +57,7 @@ if __name__ == '__main__':
                 continue
                 
             print(f"Testing: $A_{{sim}}$={a_sim}, $X_0$={x0}...", end=" ", flush=True)
-            win_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", target_opponent, a_sim, x0)
+            win_rate, loss_rate, draw_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", target_opponent, a_sim, x0)
             
             new_result = {
                 "A_sim": a_sim,

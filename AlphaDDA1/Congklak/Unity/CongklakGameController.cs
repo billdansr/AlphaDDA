@@ -104,7 +104,7 @@ namespace CongklakAI
         public ParticleSystem comboParticlePrefab; // Prefab partikel untuk efek jatuh
         public float stepDelay = 0.12f; // Time between shell drops (Optimized for 1.6x speed)
         [FormerlySerializedAs("shellMoveSpeed")]
-        public float pieceMoveSpeed = 5f; // Speed of the piece moving between holes (Increased from 3f)
+        public float pieceMoveSpeed = 15f; // Speed of the piece moving between holes (Increased from 3f)
         public float handTravelDuration = 0.3f; // Durasi gerakan tangan naik/turun (Faster from 0.5s)
 
         public string participantName = "Guest";
@@ -131,6 +131,7 @@ namespace CongklakAI
         public TMPro.TextMeshProUGUI uploadStatusText;   // Drag TextMeshPro text for upload status here
         public UnityEngine.UI.Button playAgainButton;    // Drag Play Again button here
         public UnityEngine.UI.Button mainMenuButton;     // Drag Main Menu button here
+        public UnityEngine.UI.Button resignButton;       // Drag Resign button here
         public string mainMenuSceneName = "Main Menu";  // Avoid magic strings! Expose scene name in inspector
 
         [Header("Audio Settings")]
@@ -162,6 +163,9 @@ namespace CongklakAI
         private bool isSyncingLogs = false;
         private Coroutine statusAnimationCoroutine;
         private Coroutine handTextPunchCoroutine;
+        private Coroutine statusHitCoroutine;
+        private Coroutine gameLoopCoroutine;
+        private bool isGameFinished = false;
 
         void Start()
         {
@@ -178,6 +182,7 @@ namespace CongklakAI
                 }
             }
 
+            isGameFinished = false;
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             
             // Lokalisasi teks tombol secara dinamis untuk konsistensi bahasa
@@ -191,6 +196,15 @@ namespace CongklakAI
             {
                 var btnText = mainMenuButton.GetComponentInChildren<TMP_Text>();
                 if (btnText != null && settings != null) btnText.text = settings.termMainMenu;
+            }
+
+            if (resignButton != null)
+            {
+                resignButton.onClick.RemoveAllListeners();
+                resignButton.onClick.AddListener(OnResignClicked);
+                var btnText = resignButton.GetComponentInChildren<TMP_Text>();
+                if (btnText != null) btnText.text = "Resign";
+                resignButton.gameObject.SetActive(false);
             }
 
             // Sinkronisasi data dari Singleton GameSettings
@@ -260,13 +274,132 @@ namespace CongklakAI
             gameStartTime = Time.time;
             turnStartTime = Time.time;
 
-            StartCoroutine(GameLoop());
+            gameLoopCoroutine = StartCoroutine(GameLoop());
 
             // Coba sinkronisasi data lama yang mungkin gagal kirim di sesi sebelumnya
             StartCoroutine(UploadPendingLogs());
         }
 
-        
+        private bool IsHumanTurn()
+        {
+            return game != null && ((game.currentPlayer == 1 && isP1Human) || (game.currentPlayer == -1 && isP2Human));
+        }
+
+        private int GetCurrentPlayerScore()
+        {
+            if (game == null) return 0;
+            return game.currentPlayer == 1 ? game.board[7] : game.board[15];
+        }
+
+        private int GetOpponentScore()
+        {
+            if (game == null) return 0;
+            return game.currentPlayer == 1 ? game.board[15] : game.board[7];
+        }
+
+        private void UpdateResignButtonState()
+        {
+            if (resignButton == null || game == null || isGameFinished) 
+            {
+                if (resignButton != null) resignButton.gameObject.SetActive(false);
+                return;
+            }
+
+            bool shouldShow = IsHumanTurn() && isInteracting && GetOpponentScore() > 49;
+            if (resignButton.gameObject.activeSelf != shouldShow)
+                resignButton.gameObject.SetActive(shouldShow);
+        }
+
+        public void OnResignClicked()
+        {
+            if (game == null || isGameFinished || !IsHumanTurn() || GetOpponentScore() <= 49)
+                return;
+
+            int resigningPlayer = game.currentPlayer;
+            int winner = resigningPlayer == 1 ? -1 : 1;
+
+            if (gameLoopCoroutine != null)
+            {
+                StopCoroutine(gameLoopCoroutine);
+                gameLoopCoroutine = null;
+            }
+
+            isInteracting = false;
+            game.winner = winner;
+            LogMove(0, -1, game.winner, 0, null, game.board[7], game.board[15], true);
+            SetStatus($"{GetFormattedPlayerLabel(resigningPlayer)} menyerah");
+            FinishGame();
+        }
+
+        private void FinishGame()
+        {
+            if (isGameFinished) return;
+            isGameFinished = true;
+
+            if (game == null) return;
+
+            string winnerLabel = settings != null && settings.termDraw != null ? settings.termDraw : "Draw";
+            if (game.winner != 0)
+                winnerLabel = GetFormattedPlayerLabel(game.winner);
+
+            SetStatus($"{settings.termGameOver} {winnerLabel}");
+            Debug.Log($"[Game] Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
+
+            bool humanWon = (game.winner == 1 && isP1Human) || (game.winner == -1 && isP2Human);
+            if (audioSource != null && settings != null)
+            {
+                AudioClip clip = humanWon ? settings.victorySound : settings.defeatSound;
+                if (clip != null) audioSource.PlayOneShot(clip, settings.sfxVolume);
+            }
+
+            if (gameOverPanel != null)
+            {
+                gameOverPanel.SetActive(true);
+
+                if (gameOverWinnerText != null)
+                {
+                    if (game.winner == 0)
+                    {
+                        gameOverWinnerText.text = settings.termDraw;
+                    }
+                    else if (isP2Human)
+                    {
+                        gameOverWinnerText.text = $"{GetFormattedPlayerLabel(game.winner)} {settings.termVictory}";
+                    }
+                    else
+                    {
+                        gameOverWinnerText.text = humanWon ? settings.termVictory : settings.termDefeat;
+                    }
+                }
+
+                if (gameOverDetailsText != null)
+                {
+                    string p1Hex = ColorUtility.ToHtmlStringRGB(p1GlowColor);
+                    string p2Hex = ColorUtility.ToHtmlStringRGB(p2GlowColor);
+
+                    gameOverDetailsText.text = 
+                        $"<size=120%><b>{settings.termFinalScore}</b></size>\n\n" +
+                        $"<color=#{p1Hex}>P1 (Human):</color> <b>{game.board[7]}</b>\n" +
+                        $"<color=#{p2Hex}>P2 (AI):</color> <b>{game.board[15]}</b>";
+                }
+
+                bool willSync = settings != null && settings.hasConsentedData && !isP2Human;
+                if (willSync)
+                {
+                    if (playAgainButton != null) playAgainButton.interactable = false;
+                    if (mainMenuButton != null) mainMenuButton.interactable = false;
+                    if (uploadStatusText != null) uploadStatusText.text = settings.termSyncing;
+                }
+                else
+                {
+                    if (playAgainButton != null) playAgainButton.interactable = true;
+                    if (mainMenuButton != null) mainMenuButton.interactable = true;
+                    if (uploadStatusText != null) uploadStatusText.text = "";
+                }
+            }
+
+            ExportLogsToCSV();
+        }
 
         private void LogMove(int player, int move, float v, int sims, float[] pi, int s1, int s2, bool isTerminal = false)
         {
@@ -278,7 +411,13 @@ namespace CongklakAI
             string piData = pi != null ? string.Join(";", pi) : "";
 
             float thinkTime = Time.time - turnStartTime;
-            string logRow = $"{safeName},{sessionID},{isDda},{isP2Human},{Time.time - gameStartTime:F2},{turnCount},{player},{move},{thinkTime:F2},{isTerminal},{v:F3},{sims},{piData},{s1},{s2},{boardData}";
+            
+            // Gunakan InvariantCulture untuk memastikan desimal selalu menggunakan titik (.)
+            // Ini mencegah data rusak jika Region HP partisipan menggunakan koma (,)
+            System.IFormatProvider inv = System.Globalization.CultureInfo.InvariantCulture;
+            string logRow = string.Format(inv, "{0},{1},{2},{3},{4:F2},{5},{6},{7},{8:F2},{9},{10:F3},{11},{12},{13},{14},{15}",
+                safeName, sessionID, isDda, isP2Human, (Time.time - gameStartTime), turnCount, player, move, thinkTime, isTerminal, v, sims, piData, s1, s2, boardData);
+            
             gameLogs.Add(logRow);
             
             // Reset timer untuk langkah berikutnya
@@ -287,18 +426,22 @@ namespace CongklakAI
 
         private void ExportLogsToCSV()
         {
-            // 1. Simpan ke folder 'Pending'
+            string header = "participant,sessionId,isDda,isP2Human,timeInSession,turn,player,move,thinkTime,isTerminal,v,simulations,pi,scoreP1,scoreP2,boardState";
+            string content = header + "\n" + string.Join("\n", gameLogs);
+            string fileName = $"GameLog_{participantName}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+            // 1. Master Archive: Simpan secara permanen di local (Tidak akan pernah dihapus/pindah)
+            string archivePath = System.IO.Path.Combine(Application.persistentDataPath, "Logs", "Archive");
+            if (!System.IO.Directory.Exists(archivePath)) System.IO.Directory.CreateDirectory(archivePath);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(archivePath, fileName), content);
+            Debug.Log($"[Logger] Master log disimpan secara permanen di: {archivePath}");
+
+            // 2. Pending Queue: Simpan untuk proses upload ke Cloud
             string folderPath = System.IO.Path.Combine(Application.persistentDataPath, "Logs", "Pending");
             if (!System.IO.Directory.Exists(folderPath)) System.IO.Directory.CreateDirectory(folderPath);
 
-            string fileName = $"GameLog_{participantName}_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
             string filePath = System.IO.Path.Combine(folderPath, fileName);
-
-            string header = "participant,sessionId,isDda,isP2Human,timeInSession,turn,player,move,thinkTime,isTerminal,v,simulations,pi,scoreP1,scoreP2,boardState";
-            string content = header + "\n" + string.Join("\n", gameLogs);
-
             System.IO.File.WriteAllText(filePath, content);
-            Debug.Log($"[Logger] Log disimpan ke folder Pending: {filePath}");
 
             // 2. Jalankan proses sinkronisasi hanya jika user setuju DAN bukan vs Human
             if (settings != null && settings.hasConsentedData && !isP2Human)
@@ -354,7 +497,8 @@ namespace CongklakAI
                     if (string.IsNullOrWhiteSpace(line) || line.StartsWith("participant", System.StringComparison.OrdinalIgnoreCase)) continue;
 
                     string[] data = line.Split(',');
-                    yield return StartCoroutine(SendRowToGoogle(data));
+                    // Pass null for the optional completion callback when called from batch uploader
+                    yield return StartCoroutine(SendRowToGoogle(data, null));
                     
                     lineCount++;
                     if (uploadStatusText != null) 
@@ -383,9 +527,13 @@ namespace CongklakAI
             isSyncingLogs = false;
         }
 
-        private IEnumerator SendRowToGoogle(string[] data)
+        private IEnumerator SendRowToGoogle(string[] data, System.Action<bool> onComplete)
         {
-            if (string.IsNullOrEmpty(gFormUrl)) yield break;
+            if (string.IsNullOrEmpty(gFormUrl)) 
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
 
             WWWForm form = new WWWForm();
             for (int i = 0; i < entryIds.Length && i < data.Length; i++)
@@ -403,6 +551,11 @@ namespace CongklakAI
                 if (www.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
                 {
                     Debug.LogWarning("[Logger] Gagal upload baris: " + www.error);
+                    onComplete?.Invoke(false);
+                }
+                else
+                {
+                    onComplete?.Invoke(true);
                 }
             }
         }
@@ -414,6 +567,7 @@ namespace CongklakAI
 
             // Update Highlight (Glow) untuk lubang yang aktif
             UpdateHighlights();
+            UpdateResignButtonState();
 
             if (mainCamera == null || !isInteracting) return;
 
@@ -537,77 +691,7 @@ namespace CongklakAI
 
             // LOG TERMINAL STATE: Mencatat hasil akhir papan secara resmi ke dalam log
             LogMove(0, -1, game.winner, 0, null, game.board[7], game.board[15], true);
-
-            string winnerLabel = settings.termDraw;
-            if (game.winner != 0)
-                winnerLabel = GetFormattedPlayerLabel(game.winner);
-            
-            SetStatus($"{settings.termGameOver} {winnerLabel}");
-            Debug.Log($"[Game] Game Over! Winner: P{(game.winner == 1 ? "1" : "2")}");
-            
-            // 2. Tentukan Pemenang dan mainkan SFX kemenangan/kekalahan
-            bool humanWon = (game.winner == 1 && isP1Human) || (game.winner == -1 && isP2Human);
-            if (audioSource != null && settings != null)
-            {
-                AudioClip clip = humanWon ? settings.victorySound : settings.defeatSound;
-                if (clip != null) audioSource.PlayOneShot(clip, settings.sfxVolume);
-            }
-
-            // 3. Tampilkan UI Panel Game Over
-            if (gameOverPanel != null)
-            {
-                gameOverPanel.SetActive(true);
-                
-                if (gameOverWinnerText != null)
-                {
-                    if (game.winner == 0)
-                    {
-                        gameOverWinnerText.text = settings.termDraw;
-                    }
-                    else if (isP2Human)
-                    {
-                        gameOverWinnerText.text = $"{GetFormattedPlayerLabel(game.winner)} {settings.termVictory}";
-                    }
-                    else
-                    {
-                        gameOverWinnerText.text = humanWon ? settings.termVictory : settings.termDefeat;
-                    }
-                }
-                
-                if (gameOverDetailsText != null)
-                {
-                    string p1Hex = ColorUtility.ToHtmlStringRGB(p1GlowColor);
-                    string p2Hex = ColorUtility.ToHtmlStringRGB(p2GlowColor);
-
-                    // Format tampilan: Judul besar, Skor berwarna dengan tebal, dan info giliran yang lebih kecil
-                    gameOverDetailsText.text = 
-                        $"<size=120%><b>{settings.termFinalScore}</b></size>\n\n" +
-                        $"<color=#{p1Hex}>P1 (Human):</color> <b>{game.board[7]}</b>\n" +
-                        $"<color=#{p2Hex}>P2 (AI):</color> <b>{game.board[15]}</b>\n\n" +
-                        $"<size=85%>{settings.termTotalTurns}: {turnCount}</size>";
-                }
-                
-                // Check if synchronization will actually happen (skipped for Local PvP or no consent)
-                bool willSync = settings != null && settings.hasConsentedData && !isP2Human;
-                if (willSync)
-                {
-                    // Matikan tombol sementara agar data penelitian terupload aman ke Google Form! 
-                    // Tombol akan diaktifkan kembali oleh coroutine UploadPendingLogs() setelah selesai.
-                    if (playAgainButton != null) playAgainButton.interactable = false;
-                    if (mainMenuButton != null) mainMenuButton.interactable = false;
-                    if (uploadStatusText != null) uploadStatusText.text = settings.termSyncing;
-                }
-                else
-                {
-                    // Pastikan tombol aktif jika tidak ada proses sinkronisasi yang dijadwalkan (Local PvP)
-                    if (playAgainButton != null) playAgainButton.interactable = true;
-                    if (mainMenuButton != null) mainMenuButton.interactable = true;
-                    if (uploadStatusText != null) uploadStatusText.text = "";
-                }
-            }
-
-            // EXPORT DATA SETELAH SELESAI
-            ExportLogsToCSV();
+            FinishGame();
         }
 
         /// <summary>
@@ -672,7 +756,7 @@ namespace CongklakAI
             int lastHoleIdx = -1;
             int storeIdx = (game.currentPlayer == 1) ? 7 : 15;
             int lastStoreCount = game.board[storeIdx];
-            int comboCount = 1; // Melacak rantai 'Jalan Terus' dalam satu giliran
+            int comboCount = 0; // 0 = belum ada jalan terus ekstra; pertama kali tampil tanpa x, lalu x2, x3, ...
 
             // 1. Initial Pickup: Ambil dari lubang awal (Start Hole)
             int startHole = (game.currentPlayer == 1) ? move : move + 8;
@@ -717,10 +801,18 @@ namespace CongklakAI
                     }
                     else
                     {
-                        comboCount++;
-                        SetStatus($"{playerLabel} {settings.termContinue} <size=120%><b>x{comboCount}</b></size>");
+                        if (comboCount == 0)
+                        {
+                            comboCount = 1;
+                            SetStatus($"{playerLabel} {settings.termContinue}", true);
+                        }
+                        else
+                        {
+                            comboCount++;
+                            SetStatus($"{playerLabel} {settings.termContinue} <size=120%><b>x{comboCount}</b></size>", true);
+                        }
 
-                        yield return StartCoroutine(AnimatePickup(holeIdx, handPiece, false));
+                        yield return StartCoroutine(AnimatePickup(holeIdx, handPiece, false, comboCount));
                         isFirstDropAfterPickup = true; // Set ulang flag karena baru saja ambil biji lagi
                         UpdateAllHoleVisuals();
                         UpdateUI();
@@ -815,7 +907,7 @@ namespace CongklakAI
         private IEnumerator AnimateCapture(int landingHoleIdx, GameObject lastDroppedPiece)
         {
             string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
-            SetStatus($"{playerLabel} {settings.termCapture}");
+            SetStatus($"{playerLabel} {settings.termCapture}", true);
             
             // Tambahkan jeda awal agar pemain bisa melihat posisi jatuh terakhir
             yield return new WaitForSeconds(0.4f); // Reduced delay
@@ -904,15 +996,20 @@ namespace CongklakAI
             UpdateUI();
         }
 
-        private IEnumerator AnimatePickup(int holeIdx, GameObject currentHandPiece, bool isInitial)
+        private IEnumerator AnimatePickup(int holeIdx, GameObject currentHandPiece, bool isInitial, int comboCount = 1)
         {
-            if (!isInitial)
+            if (!isInitial && comboCount <= 1)
             {
                 string playerLabel = GetFormattedPlayerLabel(game.currentPlayer);
                 SetStatus($"{playerLabel} {settings.termContinue}");
                 
                 // Jeda singkat agar transisi pengambilan biji tidak terlalu mendadak
                 yield return new WaitForSeconds(0.2f); // Faster transition
+            }
+            else if (!isInitial)
+            {
+                // Saat combo sudah tampil di status, jangan menimpanya lagi dengan teks Continue biasa.
+                yield return new WaitForSeconds(0.1f);
             }
 
             Transform handTarget = (game.currentPlayer == 1) ? p1HandTarget : p2HandTarget;
@@ -997,12 +1094,58 @@ namespace CongklakAI
 
         private void SetStatus(string msg)
         {
+            SetStatus(msg, false);
+        }
+
+        private void SetStatus(string msg, bool triggerHitEffect)
+        {
             if (statusText != null)
             {
                 statusText.text = msg;
                 statusText.color = Color.white; // Reset warna dasar agar Rich Text bekerja
+                statusText.transform.localScale = Vector3.one;
             }
             Debug.Log($"[Game] {msg}");
+
+            if (triggerHitEffect)
+                TriggerStatusHitEffect();
+        }
+
+        private void TriggerStatusHitEffect()
+        {
+            if (statusText == null) return;
+
+            if (statusHitCoroutine != null)
+                StopCoroutine(statusHitCoroutine);
+
+            statusHitCoroutine = StartCoroutine(AnimateStatusHitEffect());
+        }
+
+        private IEnumerator AnimateStatusHitEffect()
+        {
+            if (statusText == null) yield break;
+
+            Vector3 originalScale = statusText.transform.localScale;
+            Color originalColor = statusText.color;
+            Color flashColor = (game != null && game.currentPlayer == 1) ? p1GlowColor : p2GlowColor;
+
+            float duration = 0.25f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float pulse = 1f + Mathf.Sin(t * Mathf.PI) * 0.18f;
+
+                statusText.transform.localScale = originalScale * pulse;
+                statusText.color = Color.Lerp(flashColor, originalColor, t);
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            statusText.transform.localScale = originalScale;
+            statusText.color = originalColor;
+            statusHitCoroutine = null;
         }
 
         /// <summary>
