@@ -1,0 +1,170 @@
+#-------------------------------------------------------------------
+# run_elo_tournament.py
+# Perhitungan Elo Rating Riil Menggunakan Turnamen Round-Robin 50 Kali
+#-------------------------------------------------------------------
+import os
+import sys
+import numpy as np
+import multiprocessing as mp
+import csv
+from datetime import datetime
+from test_dda import GridEvaluator
+
+def calculate_elo_update(rating_a, rating_b, score_a, score_b, k_factor=8):
+    """
+    Menghitung update Elo rating untuk Pemain A dan Pemain B.
+    score_a: poin aktual Pemain A (Menang=1.0, Seri=0.5, Kalah=0.0)
+    score_b: poin aktual Pemain B (Menang=1.0, Seri=0.5, Kalah=0.0)
+    k_factor: K-Factor (nilai default dari paper K=8)
+    """
+    # Menghitung probabilitas kemenangan masing-masing pemain (Persamaan 16)
+    p_a_defeats_b = 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a) / 400.0))
+    p_b_defeats_a = 1.0 - p_a_defeats_b
+    
+    # Update Elo rating (Persamaan 17 dengan NG = 1 game per pencocokan aktual)
+    # Karena kita memperhitungkan score_a & score_b per single game secara sekuensial:
+    new_rating_a = rating_a + k_factor * (score_a - p_a_defeats_b)
+    new_rating_b = rating_b + k_factor * (score_b - p_b_defeats_a)
+    
+    return new_rating_a, new_rating_b
+
+if __name__ == '__main__':
+    # Pastikan start method 'spawn' diaktifkan untuk kompabilitas CUDA
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
+
+    # Setup parameter pengujian
+    NUM_TOURNAMENTS = 50
+    K_FACTOR = 8
+    INITIAL_ELO = 1500.0
+    N_MAX = 400
+
+    # Model path
+    base_path = "./"
+    if os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
+        base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+    
+    model_path = os.path.join(base_path, "checkpoint.model")
+    if not os.path.exists(model_path):
+        checkpoints = [f for f in os.listdir(base_path) if f.startswith("checkpoint_") and f.endswith(".model")]
+        if checkpoints:
+            checkpoints.sort(key=lambda x: int(x.split('_')[1].split('.')[0]), reverse=True)
+            model_path = os.path.join(base_path, checkpoints[0])
+            print(f"Menggunakan model terbaru: {model_path}")
+        else:
+            print("Peringatan: checkpoint.model tidak ditemukan. Evaluator akan menggunakan model acak/untrained.")
+
+    # Evaluator instance untuk menjalankan game
+    evaluator = GridEvaluator(num_mean=1, N_MAX=N_MAX, model_path=model_path)
+
+    # Daftar agent yang bertanding
+    agents = ["alphazero", "mcts", "minimax", "random", "alphadda1"]
+    
+    # Inisialisasi Elo Rating ke 1,500 (seperti di paper)
+    elo_ratings = {agent: INITIAL_ELO for agent in agents}
+
+    print("=" * 60)
+    print(f"MEMULAI TURNAMEN ROUND-ROBIN ELO RATING (Congklak)")
+    print(f"Jumlah Turnamen  : {NUM_TOURNAMENTS}")
+    print(f"K-Factor         : {K_FACTOR}")
+    print(f"Inisialisasi Elo : {INITIAL_ELO}")
+    print(f"Model checkpoint : {model_path}")
+    print("=" * 60)
+
+    # Siapkan list pasangan unik (A, B) untuk round-robin
+    pairings = []
+    for i in range(len(agents)):
+        for j in range(i + 1, len(agents)):
+            pairings.append((agents[i], agents[j]))
+
+    # Kita jalankan turnamen
+    history_ratings = []
+    
+    # Multiprocessing setup
+    num_cores = mp.cpu_count()
+    device = "cuda:0" if evaluator.play_single_game.__globals__['net_has_cuda']() else "cpu"
+
+    for t in range(1, NUM_TOURNAMENTS + 1):
+        print(f"\n--- Turnamen ke-{t}/{NUM_TOURNAMENTS} ---")
+        
+        # Buat schedule pertandingan untuk turnamen ini
+        # Setiap pasangan bermain 2 games (1 kali A sebagai P1, 1 kali B sebagai P1)
+        # Jadi total 20 games per turnamen
+        schedule = []
+        
+        for (agent_a, agent_b) in pairings:
+            # Game 1: A vs B (A is P1, B is P2)
+            schedule.append((agent_a, agent_b, device, 1.5, -2.5)) # DDA parameters default
+            
+            # Game 2: B vs A (B is P1, A is P2)
+            schedule.append((agent_b, agent_a, device, 1.5, -2.5))
+
+        # Jalankan secara paralel di CPU/GPU
+        with mp.Pool(processes=num_cores) as pool:
+            results = pool.map(evaluator.play_single_game, schedule)
+
+        # Proses hasil game secara berurutan dan update Elo
+        print("  Memproses hasil game dan mengupdate rating Elo...")
+        
+        for p_idx, (agent_a, agent_b) in enumerate(pairings):
+            # Ambil hasil dari Game 1 dan Game 2 untuk pairing ini
+            # Game 1: A vs B (A=P1, B=P2) -> index = 2 * p_idx
+            # Game 2: B vs A (B=P1, A=P2) -> index = 2 * p_idx + 1
+            
+            g1_winner, _, _ = results[2 * p_idx]
+            g2_winner, _, _ = results[2 * p_idx + 1]
+            
+            # Game 1 (A is P1, B is P2)
+            # Winner: 1 = P1 (A), -1 = P2 (B), 0 = Draw
+            score_a_g1 = 1.0 if g1_winner == 1 else (0.5 if g1_winner == 0 else 0.0)
+            score_b_g1 = 1.0 if g1_winner == -1 else (0.5 if g1_winner == 0 else 0.0)
+            
+            # Game 2 (B is P1, A is P2)
+            # Winner: 1 = P1 (B), -1 = P2 (A), 0 = Draw
+            score_a_g2 = 1.0 if g2_winner == -1 else (0.5 if g2_winner == 0 else 0.0)
+            score_b_g2 = 1.0 if g2_winner == 1 else (0.5 if g2_winner == 0 else 0.0)
+            
+            # Total score over NG = 2 games
+            total_score_a = score_a_g1 + score_a_g2
+            total_score_b = score_b_g1 + score_b_g2
+            
+            # Update rating untuk pasangan ini
+            rating_a = elo_ratings[agent_a]
+            rating_b = elo_ratings[agent_b]
+            
+            p_a_defeats_b = 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a) / 400.0))
+            p_b_defeats_a = 1.0 - p_a_defeats_b
+            
+            new_rating_a = rating_a + K_FACTOR * (total_score_a - 2.0 * p_a_defeats_b)
+            new_rating_b = rating_b + K_FACTOR * (total_score_b - 2.0 * p_b_defeats_a)
+            
+            elo_ratings[agent_a] = new_rating_a
+            elo_ratings[agent_b] = new_rating_b
+
+        # Print rating setelah turnamen ini selesai
+        print("  Peringkat Elo saat ini:")
+        for name, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True):
+            print(f"    - {name:12s} : {rating:.2f}")
+
+        # Catat history
+        row = {"Tournament": t}
+        for agent in agents:
+            row[agent] = elo_ratings[agent]
+        history_ratings.append(row)
+
+    # Simpan hasil ke CSV
+    csv_file = "elo_tournament_results.csv"
+    with open(csv_file, mode='w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=["Tournament"] + agents)
+        writer.writeheader()
+        writer.writerows(history_ratings)
+
+    print("\n" + "=" * 60)
+    print(f"TURNAMEN SELESAI!")
+    print(f"Hasil akhir peringkat Elo:")
+    for name, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True):
+        print(f"  {name:12s} : {rating:.1f}")
+    print(f"Data riwayat Elo disimpan ke {csv_file}")
+    print("=" * 60)
