@@ -7,6 +7,7 @@ import sys
 import numpy as np
 import multiprocessing as mp
 import csv
+import argparse
 from datetime import datetime
 from test_dda import GridEvaluator
 
@@ -29,6 +30,10 @@ def calculate_elo_update(rating_a, rating_b, score_a, score_b, k_factor=8):
     return new_rating_a, new_rating_b
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, help='Spesifik nama file model, misalnya checkpoint_75.model', default=None)
+    args = parser.parse_args()
+
     # Pastikan start method 'spawn' diaktifkan untuk kompabilitas CUDA
     try:
         mp.set_start_method('spawn', force=True)
@@ -43,18 +48,31 @@ if __name__ == '__main__':
 
     # Model path
     base_path = "./"
-    if os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
+    if os.path.exists('/content/AlphaDDA/AlphaZero/Congklak'):
+        base_path = '/content/AlphaDDA/AlphaZero/Congklak'
+    elif os.path.exists('/content/AlphaDDA/AlphaDDA1/Congklak'):
+        base_path = '/content/AlphaDDA/AlphaDDA1/Congklak'
+    elif os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
         base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+    elif os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaDDA1/Congklak'):
+        base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaDDA1/Congklak'
     
-    model_path = os.path.join(base_path, "checkpoint.model")
-    if not os.path.exists(model_path):
-        checkpoints = [f for f in os.listdir(base_path) if f.startswith("checkpoint_") and f.endswith(".model")]
-        if checkpoints:
-            checkpoints.sort(key=lambda x: int(x.split('_')[1].split('.')[0]), reverse=True)
-            model_path = os.path.join(base_path, checkpoints[0])
-            print(f"Menggunakan model terbaru: {model_path}")
+    if args.model:
+        model_path = os.path.join(base_path, args.model)
+        if not os.path.exists(model_path):
+            print(f"Peringatan: {model_path} tidak ditemukan. Evaluator akan menggunakan model acak/untrained.")
         else:
-            print("Peringatan: checkpoint.model tidak ditemukan. Evaluator akan menggunakan model acak/untrained.")
+            print(f"Menggunakan model spesifik: {model_path}")
+    else:
+        model_path = os.path.join(base_path, "checkpoint.model")
+        if not os.path.exists(model_path):
+            checkpoints = [f for f in os.listdir(base_path) if f.startswith("checkpoint_") and f.endswith(".model")]
+            if checkpoints:
+                checkpoints.sort(key=lambda x: int(x.split('_')[1].split('.')[0]), reverse=True)
+                model_path = os.path.join(base_path, checkpoints[0])
+                print(f"Menggunakan model terbaru: {model_path}")
+            else:
+                print("Peringatan: checkpoint.model tidak ditemukan. Evaluator akan menggunakan model acak/untrained.")
 
     # Evaluator instance untuk menjalankan game
     evaluator = GridEvaluator(num_mean=1, N_MAX=N_MAX, model_path=model_path)
