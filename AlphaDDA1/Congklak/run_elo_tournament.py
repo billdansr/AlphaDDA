@@ -82,12 +82,35 @@ if __name__ == '__main__':
     
     # Inisialisasi Elo Rating ke 1,500 (seperti di paper)
     elo_ratings = {agent: INITIAL_ELO for agent in agents}
+    
+    csv_file = "elo_tournament_results.csv"
+    start_t = 1
+    
+    # Cek apakah ada progres turnamen sebelumnya untuk dilanjutkan
+    if os.path.exists(csv_file):
+        print(f"Ditemukan file {csv_file}. Melanjutkan progres turnamen...")
+        with open(csv_file, mode='r') as f:
+            reader = csv.DictReader(f)
+            last_row = None
+            for row in reader:
+                last_row = row
+            if last_row is not None:
+                start_t = int(last_row["Tournament"]) + 1
+                for agent in agents:
+                    elo_ratings[agent] = float(last_row[agent])
+        if start_t > NUM_TOURNAMENTS:
+            print(f"Turnamen sudah selesai (telah mencapai {NUM_TOURNAMENTS}).")
+            sys.exit(0)
+    else:
+        # Jika file belum ada, inisialisasi file CSV dengan header
+        with open(csv_file, mode='w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=["Tournament"] + agents)
+            writer.writeheader()
 
     print("=" * 60)
     print(f"MEMULAI TURNAMEN ROUND-ROBIN ELO RATING (Congklak)")
-    print(f"Jumlah Turnamen  : {NUM_TOURNAMENTS}")
+    print(f"Mulai dari Turnamen: {start_t} / {NUM_TOURNAMENTS}")
     print(f"K-Factor         : {K_FACTOR}")
-    print(f"Inisialisasi Elo : {INITIAL_ELO}")
     print(f"Model checkpoint : {model_path}")
     print("=" * 60)
 
@@ -104,7 +127,7 @@ if __name__ == '__main__':
     num_cores = mp.cpu_count()
     device = "cuda:0" if evaluator.play_single_game.__globals__['net_has_cuda']() else "cpu"
 
-    for t in range(1, NUM_TOURNAMENTS + 1):
+    for t in range(start_t, NUM_TOURNAMENTS + 1):
         print(f"\n--- Turnamen ke-{t}/{NUM_TOURNAMENTS} ---")
         
         # Buat schedule pertandingan untuk turnamen ini
@@ -166,18 +189,14 @@ if __name__ == '__main__':
         for name, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True):
             print(f"    - {name:12s} : {rating:.2f}")
 
-        # Catat history
+        # Catat history dan append langsung ke CSV per turnamen
         row = {"Tournament": t}
         for agent in agents:
             row[agent] = elo_ratings[agent]
-        history_ratings.append(row)
-
-    # Simpan hasil ke CSV
-    csv_file = "elo_tournament_results.csv"
-    with open(csv_file, mode='w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=["Tournament"] + agents)
-        writer.writeheader()
-        writer.writerows(history_ratings)
+            
+        with open(csv_file, mode='a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=["Tournament"] + agents)
+            writer.writerow(row)
 
     print("\n" + "=" * 60)
     print(f"TURNAMEN SELESAI!")
