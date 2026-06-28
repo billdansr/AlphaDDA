@@ -46,30 +46,40 @@ if __name__ == '__main__':
     INITIAL_ELO = 1500.0
     N_MAX = 400
 
-    # Model path
-    base_path = "./"
+    # --- Lokasi Model (bisa dari /content/ atau Drive) ---
+    model_dir = "./"
     if os.path.exists('/content/AlphaDDA/AlphaZero/Congklak'):
-        base_path = '/content/AlphaDDA/AlphaZero/Congklak'
+        model_dir = '/content/AlphaDDA/AlphaZero/Congklak'
     elif os.path.exists('/content/AlphaDDA/AlphaDDA1/Congklak'):
-        base_path = '/content/AlphaDDA/AlphaDDA1/Congklak'
+        model_dir = '/content/AlphaDDA/AlphaDDA1/Congklak'
     elif os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
-        base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+        model_dir = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
     elif os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaDDA1/Congklak'):
-        base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaDDA1/Congklak'
+        model_dir = '/content/drive/MyDrive/Colab Notebooks/AlphaDDA1/Congklak'
+
+    # --- Lokasi Penyimpanan CSV (selalu prioritaskan Google Drive agar tidak hilang saat disconnect) ---
+    save_dir = model_dir  # fallback ke model_dir jika Drive tidak ditemukan
+    if os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
+        save_dir = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
+    elif os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaDDA1/Congklak'):
+        save_dir = '/content/drive/MyDrive/Colab Notebooks/AlphaDDA1/Congklak'
+
+    print(f"Model dir : {model_dir}")
+    print(f"Save dir  : {save_dir}")
     
     if args.model:
-        model_path = os.path.join(base_path, args.model)
+        model_path = os.path.join(model_dir, args.model)
         if not os.path.exists(model_path):
             print(f"Peringatan: {model_path} tidak ditemukan. Evaluator akan menggunakan model acak/untrained.")
         else:
             print(f"Menggunakan model spesifik: {model_path}")
     else:
-        model_path = os.path.join(base_path, "checkpoint.model")
+        model_path = os.path.join(model_dir, "checkpoint.model")
         if not os.path.exists(model_path):
-            checkpoints = [f for f in os.listdir(base_path) if f.startswith("checkpoint_") and f.endswith(".model")]
+            checkpoints = [f for f in os.listdir(model_dir) if f.startswith("checkpoint_") and f.endswith(".model")]
             if checkpoints:
                 checkpoints.sort(key=lambda x: int(x.split('_')[1].split('.')[0]), reverse=True)
-                model_path = os.path.join(base_path, checkpoints[0])
+                model_path = os.path.join(model_dir, checkpoints[0])
                 print(f"Menggunakan model terbaru: {model_path}")
             else:
                 print("Peringatan: checkpoint.model tidak ditemukan. Evaluator akan menggunakan model acak/untrained.")
@@ -77,13 +87,15 @@ if __name__ == '__main__':
     # Evaluator instance untuk menjalankan game
     evaluator = GridEvaluator(num_mean=1, N_MAX=N_MAX, model_path=model_path)
 
-    # Daftar agent yang bertanding
-    agents = ["alphazero", "mcts", "minimax", "random", "alphadda1"]
+    # Daftar agent yang bertanding (HANYA 5 baseline agents sesuai paper - Tabel 4)
+    # AlphaDDA1 TIDAK dimasukkan karena kekuatannya dinamis, bukan agen fixed-strength
+    # Elo rating baseline ini kemudian digunakan sebagai referensi pada win-loss-draw evaluation
+    agents = ["alphazero", "mcts", "minimax", "random"]
     
     # Inisialisasi Elo Rating ke 1,500 (seperti di paper)
     elo_ratings = {agent: INITIAL_ELO for agent in agents}
     
-    csv_file = os.path.join(base_path, "elo_tournament_results.csv")
+    csv_file = os.path.join(save_dir, "elo_tournament_results.csv")
     start_t = 1
     
     # Cek apakah ada progres turnamen sebelumnya untuk dilanjutkan
