@@ -83,7 +83,7 @@ if __name__ == '__main__':
     # Inisialisasi Elo Rating ke 1,500 (seperti di paper)
     elo_ratings = {agent: INITIAL_ELO for agent in agents}
     
-    csv_file = "elo_tournament_results.csv"
+    csv_file = os.path.join(base_path, "elo_tournament_results.csv")
     start_t = 1
     
     # Cek apakah ada progres turnamen sebelumnya untuk dilanjutkan
