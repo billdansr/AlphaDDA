@@ -61,7 +61,7 @@ namespace CongklakAI
         private int openingLimit = 0; // Matched to opening_test in parameters.py for inference
 
         // DDA parameters — faithfully from PeerJ-CS 1123 (Fujita, 2022)
-        private int N_MAX = 400; // Match num_mcts_sims_test in parameters.py
+        private int N_MAX = 300; // Match num_mcts_sims_test in parameters.py
         private float A = 1.5f;   // Default Congklak (calibrated)
         private float X0 = -1.75f; // Adjusted to -1.75 to match verified grid search data
         private int numMean = 1;
@@ -69,7 +69,7 @@ namespace CongklakAI
         // Static queue to persist win scores across turns (for numMean > 1)
         private static Queue<float> winScoreQueue = new Queue<float>();
 
-        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 1.5f, float X0 = -2.5f, int N_MAX = 400, int numMean = 1, float cpuct = 1.25f, float temp = 1.0f)
+        public AlphaDDA_MCTS(CongklakEngine game, AIBrain brain, float A = 1.5f, float X0 = -2.5f, int N_MAX = 300, int numMean = 1, float cpuct = 1.25f, float temp = 1.0f)
         {
             this.root = new MCTSNode(game.board, game.currentPlayer);
             this.brain = brain;

@@ -44,7 +44,7 @@ if __name__ == '__main__':
     NUM_TOURNAMENTS = 50
     K_FACTOR = 8
     INITIAL_ELO = 1500.0
-    N_MAX = 400
+    N_MAX = 300
 
     # --- Lokasi Model (bisa dari /content/ atau Drive) ---
     model_dir = "./"

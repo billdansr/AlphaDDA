@@ -35,7 +35,7 @@ class Node():
         self.children.append(child)
 
 class A_MCTS:
-    def __init__(self, game, net = None, params = Parameters(), num_mean = 1, X0 = 0.0, A = 10.0, N_MAX = 400, states = None):
+    def __init__(self, game, net = None, params = Parameters(), num_mean = 1, X0 = 0.0, A = 10.0, N_MAX = 300, states = None):
         self.num_moves = None
         self.params = params
         

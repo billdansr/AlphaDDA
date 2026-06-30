@@ -59,7 +59,7 @@ if __name__ == '__main__':
     if args.A is not None or args.X0 is not None:
         override_status = " (OVERRIDDEN by args)"
 
-    N_MAX = 400
+    N_MAX = 300
     
     
     

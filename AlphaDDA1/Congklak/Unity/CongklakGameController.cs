@@ -82,7 +82,7 @@ namespace CongklakAI
         public float temp = 1.0f;        // Match self.Temp in parameters.py
         public float sensitivityA = 1.5f; // Hasil Grid Search Terbaik
         public float offsetX0 = -1.75f;   // Closest verified alternative from grid search for a forgiving -15.0 margin
-        public int maxSims = 400;
+        public int maxSims = 300;
         public int numMean = 1;           // Sync with numMean in AlphaDDA_MCTS and research paper
         #endregion
 
@@ -169,6 +169,9 @@ namespace CongklakAI
 
         void Start()
         {
+            // Prevent mobile device from sleeping during gameplay
+            Screen.sleepTimeout = SleepTimeout.NeverSleep;
+            
             // Seed true randomness using system ticks to prevent repetitive Editor patterns
             UnityEngine.Random.InitState((int)System.DateTime.Now.Ticks);
 
