@@ -1,6 +1,7 @@
 #---------------------------------------
 # grid_search_dda.py
-# Mencari kombinasi Window dan N_MAX terbaik untuk Win Rate 50%
+# Mencari kombinasi Nh, A_sim, X0, dan N_max terbaik untuk Win Rate 50%
+# Mengikuti metodologi Fujita (2022) Table A2 yang diadaptasi untuk Congklak
 #---------------------------------------
 import os
 import csv
@@ -8,16 +9,15 @@ import multiprocessing as mp
 from test_dda import GridEvaluator
 
 if __name__ == '__main__':
-    # Konfigurasi Grid: Pergeseran Drastis untuk menyeimbangkan Bias Congklak
-    # Perhitungan: A=1.0, X0=-2.5 memberikan ~40 sims di awal dan 300 sims saat v=0
-    a_sim_list = [1.0, 1.5, 2.0]
-    x0_list = [-2.5, -2.25, -2.0, -1.75]
+    # Konfigurasi Grid: Mengikuti Table A2 Fujita (2022) dengan penyesuaian bias Congklak
+    nh_list = [1, 2, 3, 4, 5]
+    a_sim_list = [1.4, 1.6, 2.0, 2.4, 2.8]
+    x0_list = [-1.8, -1.6, -1.5, -1.4, -1.3, -1.2]
+    n_max_list = [200, 300, 400]
     
-    fixed_window = 1
-    fixed_n_max = 300
     target_opponent = "alphazero" # Sesuai protokol Connect4 Fujita
     
-    # 1. Setup Absolute Paths (Crucial for multiprocessing in Colab)
+    # Setup Absolute Paths (Crucial for multiprocessing in Colab)
     base_path = "./"
     if os.path.exists('/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'):
         base_path = '/content/drive/MyDrive/Colab Notebooks/AlphaZero/Congklak'
@@ -27,7 +27,7 @@ if __name__ == '__main__':
     model_path = os.path.join(base_path, "checkpoint.model")
     results_to_save = []
 
-    # 1. Muat hasil yang sudah ada jika ada (Resume Capability)
+    # Muat hasil yang sudah ada jika ada (Resume Capability)
     existing_configs = set()
     
     if os.path.exists(csv_file):
@@ -35,7 +35,7 @@ if __name__ == '__main__':
             reader = csv.DictReader(f)
             for row in reader:
                 results_to_save.append(row)
-                existing_configs.add((float(row['A_sim']), float(row['X0'])))
+                existing_configs.add((int(row['Nh']), float(row['A_sim']), float(row['X0']), int(row['N_max'])))
         print(f"--- Resuming Grid Search: {len(existing_configs)} combinations already done ---")
 
     # Setup Multiprocessing
@@ -44,42 +44,53 @@ if __name__ == '__main__':
     except RuntimeError:
         pass
 
-    print(f"--- Starting Fujita Grid Search ($A_{{sim}}$ vs $X_0$) ---")
-    print(f"Fixed Params: Window={fixed_window}, $N_{{max}}$={fixed_n_max}")
+    print(f"--- Starting Fujita Grid Search ($N_h$ vs $A_{{sim}}$ vs $X_0$ vs $N_{{max}}$) ---")
     
     # Gunakan standar paper: 50 P1 + 50 P2 = 100 total per combo
-    evaluator = GridEvaluator(num_mean=fixed_window, N_MAX=fixed_n_max, model_path=model_path)
+    evaluator = GridEvaluator(model_path=model_path)
     evaluator.num_games = 50
 
-    for a_sim in a_sim_list:
-        for x0 in x0_list:
-            if (a_sim, x0) in existing_configs:
-                continue
-                
-            print(f"Testing: $A_{{sim}}$={a_sim}, $X_0$={x0}...", end=" ", flush=True)
-            win_rate, loss_rate, draw_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", target_opponent, a_sim, x0)
-            
-            new_result = {
-                "A_sim": a_sim,
-                "X0": x0,
-                "WinRate": win_rate,
-                "AvgMargin": avg_margin,
-                "DiffFrom50": abs(50.0 - win_rate)
-            }
-            results_to_save.append(new_result)
+    for nh in nh_list:
+        for a_sim in a_sim_list:
+            for x0 in x0_list:
+                for n_max in n_max_list:
+                    if (nh, a_sim, x0, n_max) in existing_configs:
+                        continue
+                        
+                    print(f"Testing: Nh={nh}, A_sim={a_sim}, X0={x0}, N_max={n_max}...", end=" ", flush=True)
+                    
+                    # Update evaluator parameters dynamically
+                    evaluator.num_mean = nh
+                    evaluator.N_MAX = n_max
+                    
+                    win_rate, loss_rate, draw_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", target_opponent, a_sim, x0)
+                    
+                    new_result = {
+                        "Nh": nh,
+                        "A_sim": a_sim,
+                        "X0": x0,
+                        "N_max": n_max,
+                        "WinRate": win_rate,
+                        "AvgMargin": avg_margin,
+                        "DiffFrom50": abs(50.0 - win_rate)
+                    }
+                    results_to_save.append(new_result)
 
-            # Simpan setiap iterasi (Auto-save)
-            with open(csv_file, mode='w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=["A_sim", "X0", "WinRate", "AvgMargin", "DiffFrom50"])
-                writer.writeheader()
-                writer.writerows(results_to_save)
+                    # Simpan setiap iterasi (Auto-save)
+                    with open(csv_file, mode='w', newline='') as f:
+                        writer = csv.DictWriter(f, fieldnames=["Nh", "A_sim", "X0", "N_max", "WinRate", "AvgMargin", "DiffFrom50"])
+                        writer.writeheader()
+                        writer.writerows(results_to_save)
 
     # Tentukan pemenang
-    best_config = min(results_to_save, key=lambda x: x['DiffFrom50'])
+    best_config = min(results_to_save, key=lambda x: float(x['DiffFrom50']))
 
     print(f"\n--- Grid Search Complete ---")
     print(f"BEST CONFIGURATION (Fujita Method):")
+    print(f"Nh: {best_config['Nh']}")
     print(f"A_sim: {best_config['A_sim']}")
     print(f"X0: {best_config['X0']}")
+    print(f"N_max: {best_config['N_max']}")
     print(f"WinRate: {best_config['WinRate']}%")
     print(f"Results saved to {csv_file}")
+
