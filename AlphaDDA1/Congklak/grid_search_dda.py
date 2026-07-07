@@ -6,6 +6,7 @@
 import os
 import csv
 import multiprocessing as mp
+from statistics import mean
 from test_dda import GridEvaluator
 
 if __name__ == '__main__':
@@ -15,7 +16,8 @@ if __name__ == '__main__':
     x0_list = [-1.8, -1.6, -1.5, -1.4, -1.3, -1.2]
     n_max_list = [200, 300, 400]
     
-    target_opponent = "alphazero" # Sesuai protokol Connect4 Fujita
+    # Lawan tanding sesuai standar paper (diadaptasi ke Congklak)
+    target_opponents = ["random", "minimax", "mcts", "alphazero"]
     
     # Setup Absolute Paths (Crucial for multiprocessing in Colab)
     base_path = "./"
@@ -46,9 +48,16 @@ if __name__ == '__main__':
 
     print(f"--- Starting Fujita Grid Search ($N_h$ vs $A_{{sim}}$ vs $X_0$ vs $N_{{max}}$) ---")
     
-    # Gunakan standar paper: 50 P1 + 50 P2 = 100 total per combo
+    # Gunakan standar paper: 20 P1 + 20 P2 = 40 total per AI lawan
     evaluator = GridEvaluator(model_path=model_path)
-    evaluator.num_games = 50
+    evaluator.num_games = 20
+
+    csv_fields = [
+        "Nh", "A_sim", "X0", "N_max",
+        "WR_Random", "WR_Minimax", "WR_MCTS", "WR_AlphaZero",
+        "Margin_Random", "Margin_Minimax", "Margin_MCTS", "Margin_AlphaZero",
+        "MeanDiffFrom50"
+    ]
 
     for nh in nh_list:
         for a_sim in a_sim_list:
@@ -57,33 +66,50 @@ if __name__ == '__main__':
                     if (nh, a_sim, x0, n_max) in existing_configs:
                         continue
                         
-                    print(f"Testing: Nh={nh}, A_sim={a_sim}, X0={x0}, N_max={n_max}...", end=" ", flush=True)
+                    print(f"Testing: Nh={nh}, A_sim={a_sim}, X0={x0}, N_max={n_max}...")
                     
                     # Update evaluator parameters dynamically
                     evaluator.num_mean = nh
                     evaluator.N_MAX = n_max
                     
-                    win_rate, loss_rate, draw_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", target_opponent, a_sim, x0)
+                    win_rates = {}
+                    margins = {}
+                    diffs = []
+                    
+                    for opp in target_opponents:
+                        win_rate, loss_rate, draw_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", opp, a_sim, x0)
+                        win_rates[opp] = win_rate
+                        margins[opp] = avg_margin
+                        diffs.append(abs(50.0 - win_rate))
+                    
+                    mean_diff = mean(diffs)
                     
                     new_result = {
                         "Nh": nh,
                         "A_sim": a_sim,
                         "X0": x0,
                         "N_max": n_max,
-                        "WinRate": win_rate,
-                        "AvgMargin": avg_margin,
-                        "DiffFrom50": abs(50.0 - win_rate)
+                        "WR_Random": win_rates["random"],
+                        "WR_Minimax": win_rates["minimax"],
+                        "WR_MCTS": win_rates["mcts"],
+                        "WR_AlphaZero": win_rates["alphazero"],
+                        "Margin_Random": margins["random"],
+                        "Margin_Minimax": margins["minimax"],
+                        "Margin_MCTS": margins["mcts"],
+                        "Margin_AlphaZero": margins["alphazero"],
+                        "MeanDiffFrom50": mean_diff
                     }
                     results_to_save.append(new_result)
+                    print(f"  > Mean Diff From 50%: {mean_diff:.2f}%")
 
                     # Simpan setiap iterasi (Auto-save)
                     with open(csv_file, mode='w', newline='') as f:
-                        writer = csv.DictWriter(f, fieldnames=["Nh", "A_sim", "X0", "N_max", "WinRate", "AvgMargin", "DiffFrom50"])
+                        writer = csv.DictWriter(f, fieldnames=csv_fields)
                         writer.writeheader()
                         writer.writerows(results_to_save)
 
     # Tentukan pemenang
-    best_config = min(results_to_save, key=lambda x: float(x['DiffFrom50']))
+    best_config = min(results_to_save, key=lambda x: float(x['MeanDiffFrom50']))
 
     print(f"\n--- Grid Search Complete ---")
     print(f"BEST CONFIGURATION (Fujita Method):")
@@ -91,6 +117,5 @@ if __name__ == '__main__':
     print(f"A_sim: {best_config['A_sim']}")
     print(f"X0: {best_config['X0']}")
     print(f"N_max: {best_config['N_max']}")
-    print(f"WinRate: {best_config['WinRate']}%")
+    print(f"Mean Diff From 50%: {best_config['MeanDiffFrom50']:.2f}%")
     print(f"Results saved to {csv_file}")
-

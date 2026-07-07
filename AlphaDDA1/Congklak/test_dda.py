@@ -69,10 +69,12 @@ class GridEvaluator():
             
             if current_player_type == "random":
                 move = Random_player().action(g)
-            elif current_player_type == "minimax":
+            elif current_player_type == "minimax1":
                 move = Minimax(g).Run()
-            elif current_player_type == "mcts":
-                move = ClassicalMCTS(g).Run()
+            elif current_player_type == "mcts1":
+                mcts_ai = ClassicalMCTS(g)
+                mcts_ai.num_sim = 300
+                move = mcts_ai.Run()
             elif current_player_type == "alphazero":
                 # Ensure fair comparison with DDA1 max sims
                 params.num_mcts_sims = self.N_MAX
@@ -112,34 +114,38 @@ class GridEvaluator():
             results = pool.map(self.play_single_game, schedule)
 
         # Aggregate results
-        ai_wins = 0
-        ai_draws = 0
-        ai_losses = 0
-        ai_margins = []
+        f_wins, f_draws, f_losses = 0, 0, 0
+        s_wins, s_draws, s_losses = 0, 0, 0
         
         for i, (winner, p1_s, p2_s) in enumerate(results):
-            if i % 2 == 0: # Target was P1
-                ai_side = self.params.p1
-                ai_margins.append(p1_s - p2_s)
-            else: # Target was P2
-                ai_side = self.params.p2
-                ai_margins.append(p2_s - p1_s)
-            
-            if winner == ai_side:
-                ai_wins += 1
-            elif winner == 0:
-                ai_draws += 1
-            else:
-                ai_losses += 1
+            if i % 2 == 0: # Target was P1 (First Player)
+                if winner == self.params.p1:
+                    f_wins += 1
+                elif winner == 0:
+                    f_draws += 1
+                else:
+                    f_losses += 1
+            else: # Target was P2 (Second Player)
+                if winner == self.params.p2:
+                    s_wins += 1
+                elif winner == 0:
+                    s_draws += 1
+                else:
+                    s_losses += 1
 
-        total_games = len(results)
-        win_rate = (ai_wins / total_games) * 100
-        draw_rate = (ai_draws / total_games) * 100
-        loss_rate = (ai_losses / total_games) * 100
-        avg_margin = sum(ai_margins) / total_games
+        f_win_rate = f_wins / self.num_games
+        f_loss_rate = f_losses / self.num_games
+        f_draw_rate = f_draws / self.num_games
+
+        s_win_rate = s_wins / self.num_games
+        s_loss_rate = s_losses / self.num_games
+        s_draw_rate = s_draws / self.num_games
         
-        print(f"RESULT | Win: {win_rate:.1f}% | Loss: {loss_rate:.1f}% | Draw: {draw_rate:.1f}% | AvgMargin: {avg_margin:+.2f}", flush=True)
-        return win_rate, avg_margin
+        print(f"first: {self.num_mean} 1.5 -2.5 {self.N_MAX} {opponent_type} {f_wins} {f_losses} {f_draws}", flush=True)
+        print(f"second: {self.num_mean} 1.5 -2.5 {self.N_MAX} {opponent_type} {s_wins} {s_losses} {s_draws}", flush=True)
+        print(f"total: {self.num_mean} 1.5 -2.5 {self.N_MAX} {opponent_type} {f_wins+s_wins} {f_losses+s_losses} {f_draws+s_draws}", flush=True)
+
+        return (f_win_rate, f_loss_rate, f_draw_rate), (s_win_rate, s_loss_rate, s_draw_rate)
 
     def run_bulk_test_custom(self, target_ai, opponent_type, a_val, x0_val):
         """ Specialized version for Grid Search with custom A and X0 """
@@ -227,26 +233,46 @@ if __name__ == '__main__':
 
     evaluator = GridEvaluator(num_mean=n_mean, N_MAX=n_max, model_path=model_path)
     
-    # Run the grid search pairings
+    # Run the evaluation pairings
     print(f"--- Starting Bulk Grid Evaluation (N_MAX={n_max}, Window={n_mean}) ---", flush=True)
     
-    # Test against all 4 opponents defined in the paper
-    opponents = ["random", "minimax", "mcts", "alphazero"]
+    # Test against all opponents defined in the paper (filtered to MCTS1 and Minimax1 + others)
+    opponents = ["alphazero", "mcts1", "minimax1", "random"]
+    
+    csv_file = os.path.join(base_path, "alphadda1_eval.csv")
     results_to_save = []
+    
+    # Cek apakah ada file resume
+    existing_opps = set()
+    if os.path.exists(csv_file):
+        with open(csv_file, mode='r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                results_to_save.append(row)
+                existing_opps.add(row["Opponent"])
+        print(f"Resume: Ditemukan {len(existing_opps)} lawan yang sudah diuji sebelumnya.")
 
     for opp in opponents:
-        win_rate, avg_margin = evaluator.run_bulk_test("alphadda1", opp)
+        if opp in existing_opps:
+            continue
+            
+        f_res, s_res = evaluator.run_bulk_test("alphadda1", opp)
+        
+        # Simpan hasil First dan Second
         results_to_save.append({
             "Opponent": opp,
-            "WinRate": f"{win_rate:.1f}%",
-            "AvgMargin": f"{avg_margin:+.2f}"
+            "F_WinRate": f"{f_res[0]:.2f}",
+            "F_LossRate": f"{f_res[1]:.2f}",
+            "F_DrawRate": f"{f_res[2]:.2f}",
+            "S_WinRate": f"{s_res[0]:.2f}",
+            "S_LossRate": f"{s_res[1]:.2f}",
+            "S_DrawRate": f"{s_res[2]:.2f}"
         })
 
-    # Save to CSV for thesis reporting
-    csv_file = "alphadda1_eval.csv"
-    with open(csv_file, mode='w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=["Opponent", "WinRate", "AvgMargin"])
-        writer.writeheader()
-        writer.writerows(results_to_save)
+        # Auto-save setelah setiap opponent selesai (Mencegah hilang karena disconnect)
+        with open(csv_file, mode='w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=["Opponent", "F_WinRate", "F_LossRate", "F_DrawRate", "S_WinRate", "S_LossRate", "S_DrawRate"])
+            writer.writeheader()
+            writer.writerows(results_to_save)
 
     print(f"\n--- Evaluation Complete. Results saved to {csv_file} ---")
