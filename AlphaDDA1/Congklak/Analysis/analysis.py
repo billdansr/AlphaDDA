@@ -4,6 +4,7 @@ import seaborn as sns
 import datetime
 import os
 import numpy as np
+import base64
 from scipy import stats
 from statsmodels.stats.weightstats import DescrStatsW
 
@@ -21,21 +22,39 @@ plt.rcParams.update({
 })
 
 APA_ALPHA = 0.05
+HTML_CONTENT = ""
 
 # ──────────────────────────────────────────────────────────────
-# DATA LOADING
+# HELPER FUNCTIONS
 # ──────────────────────────────────────────────────────────────
+def add_to_html(title, content):
+    global HTML_CONTENT
+    HTML_CONTENT += f"<h3>{title}</h3>\n{content}<br><br>\n"
+
+def _apa_interpret_p(p):
+    if p < 0.001:
+        return "p < .001"
+    else:
+        p_str = f"{p:.3f}"
+        if p_str.startswith("0."):
+            p_str = p_str[1:]
+        return f"p = {p_str}"
+
+def _apa_effect_size_cohens_d(mean_diff, std_diff):
+    return mean_diff / std_diff if std_diff != 0 else 0.0
+
+def _apa_effect_size_r(z_stat, n):
+    return abs(z_stat) / np.sqrt(n) if n != 0 else 0.0
+
 def load_and_preprocess(file_name='game_logs.csv'):
-    """Memuat data dan melakukan pra-pemrosesan tipe data."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(script_dir, file_name)
-    
     if not os.path.exists(file_path):
         excel_path = file_path.replace('.csv', '.xlsx')
         if os.path.exists(excel_path):
             file_path = excel_path
         else:
-            print(f"Error: File {file_name} atau .xlsx tidak ditemukan di {script_dir}")
+            print(f"Error: File {file_name} tidak ditemukan.")
             return None
 
     if file_path.endswith('.xlsx'):
@@ -51,6 +70,11 @@ def load_and_preprocess(file_name='game_logs.csv'):
     df['isDda'] = df['isDda'].astype(str).str.upper().str.strip() == 'TRUE'
     df['isTerminal'] = df['isTerminal'].astype(str).str.upper().str.strip() == 'TRUE'
     
+    # Filter out local multiplayer sessions (Human vs Human)
+    if 'isP2Human' in df.columns:
+        df['isP2Human'] = df['isP2Human'].astype(str).str.upper().str.strip() == 'TRUE'
+        df = df[df['isP2Human'] == False]
+    
     numeric_cols = ['thinkTime', 'v', 'simulations', 'scoreP1', 'scoreP2', 'turn']
     for col in numeric_cols:
         if col in df.columns:
@@ -58,726 +82,568 @@ def load_and_preprocess(file_name='game_logs.csv'):
 
     return df
 
-
 # ──────────────────────────────────────────────────────────────
-# HELPER: APA FORMATTING
+# 1. ANALISIS DESKRIPTIF & WIN RATE AGREGAT
 # ──────────────────────────────────────────────────────────────
-def _apa_effect_size_cohens_d(mean_diff, std_diff):
-    if std_diff == 0:
-        return 0.0
-    return mean_diff / std_diff
+def analyze_descriptive(df):
+    terminal_df = df.sort_values('turn').groupby('sessionId').last().reset_index()
+    
+    # 1. Demografi Partisipan (APA Table 1 format)
+    player_metadata = {
+        'Rizka': {'age': 22, 'gender': 'Male', 'exp': 'Inexperienced'},
+        'Dies Natalis': {'age': 22, 'gender': 'Male', 'exp': 'Experienced'},
+        'Budi A': {'age': 22, 'gender': 'Male', 'exp': 'Experienced'},
+        'Vanka': {'age': 22, 'gender': 'Male', 'exp': 'Inexperienced'},
+        'Budi2 A': {'age': 22, 'gender': 'Male', 'exp': 'Inexperienced'},
+        'Budiono Siregar': {'age': 21, 'gender': 'Male', 'exp': 'Experienced'},
+        'SAUQI A': {'age': 22, 'gender': 'Male', 'exp': 'Inexperienced'},
+        'rifal casmana': {'age': 21, 'gender': 'Male', 'exp': 'Inexperienced'},
+        'NHD B': {'age': 21, 'gender': 'Male', 'exp': 'Experienced'},
+        'mumtaz': {'age': 22, 'gender': 'Male', 'exp': 'Experienced'}
+    }
+    
+    males = sum(1 for p, m in player_metadata.items() if m['gender'] == 'Male')
+    females = sum(1 for p, m in player_metadata.items() if m['gender'] == 'Female')
+    age_21 = sum(1 for p, m in player_metadata.items() if m['age'] == 21)
+    age_22 = sum(1 for p, m in player_metadata.items() if m['age'] == 22)
+    exp_y = sum(1 for p, m in player_metadata.items() if m['exp'] == 'Experienced')
+    exp_n = sum(1 for p, m in player_metadata.items() if m['exp'] == 'Inexperienced')
+    
+    demo_html = f"""
+    <table class="table-apa" style="width: 60%; margin: 15px auto 35px auto;">
+      <thead>
+        <tr>
+          <th style="text-align: left;">Baseline Characteristic</th>
+          <th>n</th>
+          <th>%</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: left; font-weight: bold;" colspan="3">Gender</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; padding-left: 20px;">Female</td>
+          <td>{females}</td>
+          <td>{females*10:.0f}%</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; padding-left: 20px;">Male</td>
+          <td>{males}</td>
+          <td>{males*10:.0f}%</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; font-weight: bold;" colspan="3">Age (Years)</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; padding-left: 20px;">21</td>
+          <td>{age_21}</td>
+          <td>{age_21*10:.0f}%</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; padding-left: 20px;">22</td>
+          <td>{age_22}</td>
+          <td>{age_22*10:.0f}%</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; font-weight: bold;" colspan="3">Previous Congklak Experience</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; padding-left: 20px;">Experienced (Yes)</td>
+          <td>{exp_y}</td>
+          <td>{exp_y*10:.0f}%</td>
+        </tr>
+        <tr>
+          <td style="text-align: left; padding-left: 20px;">Inexperienced (No)</td>
+          <td>{exp_n}</td>
+          <td>{exp_n*10:.0f}%</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="font-size: 11px; text-align: center; font-family: 'Times New Roman'; margin-top: -25px; margin-bottom: 30px;">
+      <i>Note.</i> N = 10. Participants were on average 21.70 years old (SD = 0.48).
+    </div>
+    """
+    add_to_html("1. Sociodemographic Characteristics of Participants at Baseline (Table 1)", demo_html)
 
-def _apa_effect_size_r(z_stat, n):
-    if n == 0:
-        return 0.0
-    return abs(z_stat) / np.sqrt(n)
-
-def _apa_interpret_cohens_d(d):
-    ad = abs(d)
-    if ad < 0.2:
-        return "sangat kecil"
-    elif ad < 0.5:
-        return "kecil"
-    elif ad < 0.8:
-        return "sedang"
-    else:
-        return "besar"
-
-def _apa_interpret_p(p):
-    if p < 0.001:
-        return "p < .001"
-    else:
-        return f"p = {p:.3f}"
-
-def _apa_latex_math(t_or_z, df_val, stat_val, p_val, effect_symbol=None, effect_value=None):
-    base = f"{t_or_z}({df_val}) = {float(stat_val):.3f}, {_apa_interpret_p(p_val)}"
-    if effect_symbol and effect_value is not None:
-        base += f", {effect_symbol} = {effect_value:.2f}"
-    return base
-
-def _apa_decision(p):
-    if p < APA_ALPHA:
-        return "SIGNIFIKAN"
-    else:
-        return "TIDAK SIGNIFIKAN"
-
-def _apa_normality_decision(p):
-    if p > APA_ALPHA:
-        return "normal (p > .05)"
-    else:
-        return "tidak normal (p <= .05)"
-
-
-# ──────────────────────────────────────────────────────────────
-# 1. DESCRIPTIVE STATISTICS (APA STYLE)
-# ──────────────────────────────────────────────────────────────
-def print_descriptive_statistics(df):
-    terminal_df = df[df['isTerminal'] == True].copy()
-    if terminal_df.empty:
-        terminal_df = df.sort_values('turn').groupby('sessionId').tail(1).copy()
-
-    terminal_df['AbsMargin'] = (terminal_df['scoreP1'] - terminal_df['scoreP2']).abs()
-    human_moves = df[df['player'] == 1].dropna(subset=['thinkTime'])
-
-    print("\n" + "="*70)
-    print("STATISTIK DESKRIPTIF (APA STYLE)")
-    print("="*70)
-
-    # ── 1a. Demografi Partisipan ──
-    n_participants = terminal_df['participant'].nunique()
-    n_sessions = len(terminal_df)
-    n_dda = terminal_df['isDda'].sum()
-    n_nodda = n_sessions - n_dda
-    print(f"\n1. DEMOGRAFI PARTISIPAN")
-    print(f"   N partisipan = {n_participants}")
-    print(f"   Total sesi   = {n_sessions} ({n_dda} DDA, {n_nodda} Non-DDA)")
-    sesi_dist = terminal_df.groupby(['participant', 'isDda']).size().unstack(fill_value=0)
-    print(f"   Distribusi sesi per partisipan:")
-    for part, row in sesi_dist.iterrows():
-        print(f"     {part}: {row.get(False,0)} Non-DDA, {row.get(True,0)} DDA")
-    print(f"   Catatan: Analisis paired (within-subjects) menggunakan mean per partisipan,")
-    print(f"   sehingga partisipan dengan >1 sesi per kondisi tetap berkontribusi 1 data point.")
-
-    # ── 1b. Skor Akhir (participant-level) ──
-    print(f"\n2. SKOR AKHIR (P1 = Human, P2 = AI) — Participant-level (N = {n_participants})")
-    for dda_label, dda_name in [(True, "DDA"), (False, "Non-DDA")]:
-        part_agg = terminal_df[terminal_df['isDda'] == dda_label].groupby('participant').agg({
-            'scoreP1': 'mean', 'scoreP2': 'mean', 'AbsMargin': 'mean'
-        })
-        m_p1 = part_agg['scoreP1'].mean()
-        sd_p1 = part_agg['scoreP1'].std()
-        med_p1 = part_agg['scoreP1'].median()
-        q1_p1 = part_agg['scoreP1'].quantile(0.25)
-        q3_p1 = part_agg['scoreP1'].quantile(0.75)
-        m_p2 = part_agg['scoreP2'].mean()
-        sd_p2 = part_agg['scoreP2'].std()
-        med_p2 = part_agg['scoreP2'].median()
-        q1_p2 = part_agg['scoreP2'].quantile(0.25)
-        q3_p2 = part_agg['scoreP2'].quantile(0.75)
-        m_margin = part_agg['AbsMargin'].mean()
-        sd_margin = part_agg['AbsMargin'].std()
-        med_margin = part_agg['AbsMargin'].median()
-        q1_margin = part_agg['AbsMargin'].quantile(0.25)
-        q3_margin = part_agg['AbsMargin'].quantile(0.75)
-        print(f"   [{dda_name}]")
-        print(f"     P1: M = {m_p1:.2f}, SD = {sd_p1:.2f}, Mdn = {med_p1:.2f}, Q1-Q3 = [{q1_p1:.2f}, {q3_p1:.2f}]")
-        print(f"     P2: M = {m_p2:.2f}, SD = {sd_p2:.2f}, Mdn = {med_p2:.2f}, Q1-Q3 = [{q1_p2:.2f}, {q3_p2:.2f}]")
-        print(f"     Margin: M = {m_margin:.2f}, SD = {sd_margin:.2f}, Mdn = {med_margin:.2f}, Q1-Q3 = [{q1_margin:.2f}, {q3_margin:.2f}]")
-
-    # ── 1c. Waktu Berpikir (Think Time, participant-level) ──
-    print(f"\n3. WAKTU BERPIKIR (Think Time, sekon) — Participant-level (N = {n_participants})")
-    for dda_label, dda_name in [(True, "DDA"), (False, "Non-DDA")]:
-        part_mean = human_moves[human_moves['isDda'] == dda_label].groupby('participant')['thinkTime'].mean()
-        m = part_mean.mean()
-        sd = part_mean.std()
-        med = part_mean.median()
-        q1 = part_mean.quantile(0.25)
-        q3 = part_mean.quantile(0.75)
-        print(f"   [{dda_name}] M = {m:.2f}, SD = {sd:.2f}, Mdn = {med:.2f}, Q1-Q3 = [{q1:.2f}, {q3:.2f}]")
-
-    # ── 1d. Win Rate (participant-level) ──
-    print(f"\n4. WIN RATE — Participant-level (N = {n_participants})")
+    # ── HITUNG WINNER UNTUK ANALISIS LANJUTAN ──
     def get_winner(row):
         if row['scoreP1'] > row['scoreP2']: return 'Human'
         if row['scoreP2'] > row['scoreP1']: return 'AI'
         return 'Draw'
     terminal_df['Winner'] = terminal_df.apply(get_winner, axis=1)
-    part_winner = terminal_df.groupby(['participant', 'isDda', 'Winner']).size().unstack(fill_value=0)
-    for col in ['Human', 'AI', 'Draw']:
-        if col not in part_winner.columns: part_winner[col] = 0
-    part_winner_pct = part_winner.div(part_winner.sum(axis=1), axis=0) * 100
-    for dda_label, dda_name in [(True, "DDA"), (False, "Non-DDA")]:
-        subset = part_winner_pct[part_winner_pct.index.get_level_values('isDda') == dda_label]
-        if not subset.empty:
-            h = subset['Human'].mean()
-            a = subset['AI'].mean()
-            d = subset['Draw'].mean()
-            print(f"   [{dda_name}] Human = {h:.1f}%, AI = {a:.1f}%, Draw = {d:.1f}%")
+    
+    # ── ANALISIS STRATEGI LANGKAH PEMBUKA (TURN 1 & TURN 2) ──
+    turn1_human = df[(df['turn'] == 1) & (df['player'] == 1) & (df['move'].isin(range(7)))]
+    t1_counts = turn1_human['move'].value_counts().reindex(range(7), fill_value=0)
+    t1_pct = (t1_counts / t1_counts.sum() * 100) if t1_counts.sum() > 0 else t1_counts
+    
+    t1_df = pd.DataFrame({
+        'Lubang Pilihan': [f"Lubang {i}" for i in range(7)],
+        'Frekuensi': t1_counts.values,
+        'Persentase (%)': [f"{v:.1f}%" for v in t1_pct.values]
+    })
+    
+    turn2_ai = df[(df['turn'] == 2) & (df['player'] == -1) & (df['move'].isin(range(7)))]
+    if not turn2_ai.empty:
+        t2_counts = turn2_ai.groupby(['isDda', 'move']).size().unstack(fill_value=0).reindex(columns=range(7), fill_value=0)
+        t2_counts.index = t2_counts.index.map({True: 'DDA (Adaptif)', False: 'Non-DDA (Statis)'})
+        t2_counts.columns = [f"Lubang {c}" for c in t2_counts.columns]
+        t2_html = t2_counts.to_html(classes='table table-apa', border=0)
+    else:
+        t2_html = "<p>Data AI Turn 2 tidak ditemukan.</p>"
+        
+    add_to_html("3a. Preferensi Langkah Pembuka Manusia (Turn 1)", t1_df.to_html(index=False, classes='table table-apa', border=0))
+    add_to_html("3b. Preferensi Langkah Balasan AI (Turn 2) per Kondisi", t2_html)
+    
+    return terminal_df
 
-    # ── 1e. DDA Metrics ──
-    dda_moves = df[(df['isDda'] == True) & (df['player'] == -1) & (df['v'].notnull())]
+# ──────────────────────────────────────────────────────────────
+# 2. PENGUJIAN HIPOTESIS (H1 & H2)
+# ──────────────────────────────────────────────────────────────
+def test_hypotheses(df, terminal_df):
+    terminal_df['AbsMargin'] = (terminal_df['scoreP1'] - terminal_df['scoreP2']).abs()
+    
+    human_moves = df[df['player'] == 1].dropna(subset=['thinkTime'])
+    playtime_df = human_moves.groupby(['sessionId', 'participant', 'isDda'])['thinkTime'].sum().reset_index()
+    playtime_df.rename(columns={'thinkTime': 'TotalPlaytime'}, inplace=True)
+    
+    paired_margin = terminal_df.groupby(['participant', 'isDda'])['AbsMargin'].mean().unstack().dropna()
+    paired_playtime = playtime_df.groupby(['participant', 'isDda'])['TotalPlaytime'].mean().unstack().dropna()
+    
+    # Uji Normalitas (Shapiro-Wilk) pada selisih data
+    dda_margin = paired_margin[True]
+    nodda_margin = paired_margin[False]
+    diff_margin = dda_margin - nodda_margin
+    _, p_norm_margin = stats.shapiro(diff_margin)
+    
+    if p_norm_margin > 0.05:
+        t_margin, p_margin = stats.ttest_rel(dda_margin, nodda_margin)
+        test_type_margin = "Paired t-Test"
+    else:
+        # Wilcoxon returns statistic W
+        t_margin, p_margin = stats.wilcoxon(dda_margin, nodda_margin)
+        test_type_margin = "Wilcoxon W"
+        
+    cohen_margin = _apa_effect_size_cohens_d(diff_margin.mean(), diff_margin.std())
+    
+    dda_playtime = paired_playtime[True]
+    nodda_playtime = paired_playtime[False]
+    diff_playtime = dda_playtime - nodda_playtime
+    _, p_norm_playtime = stats.shapiro(diff_playtime)
+    
+    if p_norm_playtime > 0.05:
+        t_playtime, p_playtime = stats.ttest_rel(dda_playtime, nodda_playtime)
+        test_type_playtime = "Paired t-Test"
+    else:
+        t_playtime, p_playtime = stats.wilcoxon(dda_playtime, nodda_playtime)
+        test_type_playtime = "Wilcoxon W"
+        
+    cohen_playtime = _apa_effect_size_cohens_d(diff_playtime.mean(), diff_playtime.std())
+    
+    # Hitung p-value one-tailed
+    p_margin_val = p_margin / 2 if diff_margin.mean() < 0 else 1 - p_margin / 2
+    p_playtime_val = p_playtime / 2 if diff_playtime.mean() > 0 else 1 - p_playtime / 2
+    
+    p_margin_str = _apa_interpret_p(p_margin_val).replace("p = ", "")
+    p_playtime_str = _apa_interpret_p(p_playtime_val).replace("p = ", "")
+
+    table2_html = f"""
+    <table class="table-apa" style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman'; margin-top: 15px; margin-bottom: 35px;">
+      <thead>
+        <tr style="border-top: 1.5px solid black; border-bottom: 1px solid black;">
+          <th style="text-align: left; padding: 8px;" rowspan="2">Metric</th>
+          <th colspan="2" style="border-bottom: 1px solid black; padding: 8px;">DDA Condition (n = 10)</th>
+          <th colspan="2" style="border-bottom: 1px solid black; padding: 8px;">Non-DDA Condition (n = 10)</th>
+          <th rowspan="2" style="padding: 8px;">Test Type</th>
+          <th rowspan="2" style="padding: 8px;">Statistic</th>
+          <th rowspan="2" style="padding: 8px;">p (One-Tailed)</th>
+          <th rowspan="2" style="padding: 8px;">Cohen's d</th>
+        </tr>
+        <tr style="border-bottom: 1.5px solid black;">
+          <th style="padding: 8px;">M</th>
+          <th style="padding: 8px;">SD</th>
+          <th style="padding: 8px;">M</th>
+          <th style="padding: 8px;">SD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: left; padding: 8px;">Delta Score (&Delta;S)</td>
+          <td style="padding: 8px;">{dda_margin.mean():.2f}</td>
+          <td style="padding: 8px;">{dda_margin.std():.2f}</td>
+          <td style="padding: 8px;">{nodda_margin.mean():.2f}</td>
+          <td style="padding: 8px;">{nodda_margin.std():.2f}</td>
+          <td style="padding: 8px;">{test_type_margin}</td>
+          <td style="padding: 8px;">{t_margin:.3f}</td>
+          <td style="padding: 8px;">{p_margin_str}</td>
+          <td style="padding: 8px;">{cohen_margin:.2f}</td>
+        </tr>
+        <tr style="border-bottom: 1.5px solid black;">
+          <td style="text-align: left; padding: 8px;">Playtime (seconds)</td>
+          <td style="padding: 8px;">{dda_playtime.mean():.2f}</td>
+          <td style="padding: 8px;">{dda_playtime.std():.2f}</td>
+          <td style="padding: 8px;">{nodda_playtime.mean():.2f}</td>
+          <td style="padding: 8px;">{nodda_playtime.std():.2f}</td>
+          <td style="padding: 8px;">{test_type_playtime}</td>
+          <td style="padding: 8px;">{t_playtime:.3f}</td>
+          <td style="padding: 8px;">{p_playtime_str}</td>
+          <td style="padding: 8px;">{cohen_playtime:.2f}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="font-size: 11px; text-align: left; font-family: 'Times New Roman'; margin-top: -25px; margin-bottom: 30px;">
+      <i>Note.</i> N = 10 pairs. Test Type changes dynamically based on Shapiro-Wilk normality test results.
+    </div>
+    """
+    
+    add_to_html("4. Results of Paired t-Tests Comparing DDA and Non-DDA (Table 2)", table2_html)
+    return paired_margin, paired_playtime, terminal_df
+
+# ──────────────────────────────────────────────────────────────
+# 3. ANALISIS MEKANISME INTERNAL DDA (VALIDATION)
+# ──────────────────────────────────────────────────────────────
+def analyze_dda_mechanism(df):
+    # Analisis hubungan antara evaluasi posisi (v) dan jumlah simulasi pencarian MCTS
+    # DDA dinamis AlphaZero mengurangi simulasi ketika memimpin (v tinggi) dan menambahnya saat tertinggal (v rendah).
+    dda_moves = df[(df['isDda'] == True) & (df['player'] == -1) & (df['v'].notnull()) & (df['simulations'].notnull())]
     if not dda_moves.empty:
         corr, p_corr = stats.pearsonr(dda_moves['v'], dda_moves['simulations'])
-        print(f"\n5. MEKANISME DDA (Korelasi Value vs Simulations)")
-        print(f"   r({len(dda_moves)-2}) = {corr:.3f}, {_apa_interpret_p(p_corr)}")
-        print(f"   Interpretasi: {'Negatif kuat (DDA bekerja)' if corr < -0.5 else 'Lemah/tidak sesuai'}")
-
-    print("\n" + "="*70)
-
+        
+        mech_text = f"""
+        <p>Hubungan antara Evaluasi Nilai Board State (<i>v</i>) dan Pencarian Simulasi MCTS pada AI:</p>
+        <ul>
+            <li><b>Korelasi Pearson (r):</b> {corr:.3f} ({_apa_interpret_p(p_corr)})</li>
+            <li><b>Penjelasan Mekanisme:</b> Korelasi negatif yang signifikan menunjukkan DDA berhasil bekerja secara adaptif. Saat AI mengevaluasi posisinya menguntungkan (v mendekati 1), DDA secara dinamis menurunkan simulasi (membuat AI bermain lebih lemah). Sebaliknya, saat AI tertekan (v mendekati -1), DDA meningkatkan jumlah simulasi agar AI bermain lebih cerdas.</li>
+        </ul>
+        """
+        add_to_html("5. Validasi Mekanisme Internal DDA", mech_text)
+        print(f"\n[DDA MECHANISM] Korelasi v vs simulations: r={corr:.3f}, p={p_corr:.4f}")
+    else:
+        print("\n[DDA MECHANISM] Data v/simulations tidak ditemukan.")
 
 # ──────────────────────────────────────────────────────────────
-# 2. INFERENTIAL STATISTICS — HYPOTHESIS TESTING (APA STYLE)
+# 3b. ANALISIS PENGARUH PENGALAMAN BERMAIN (EXPERIENCED VS INEXPERIENCED)
 # ──────────────────────────────────────────────────────────────
-def print_hypothesis_testing(df):
-    terminal_df = df[df['isTerminal'] == True].copy()
-    if terminal_df.empty:
-        terminal_df = df.sort_values('turn').groupby('sessionId').tail(1).copy()
-
+def analyze_experience_influence(df, terminal_df):
+    experience_map = {
+        'Rizka': 'N', 'Dies Natalis': 'Y', 'Budi A': 'Y', 'Vanka': 'N', 'Budi2 A': 'N',
+        'Budiono Siregar': 'Y', 'SAUQI A': 'N', 'rifal casmana': 'N', 'NHD B': 'Y', 'mumtaz': 'Y'
+    }
+    
+    terminal_df = terminal_df.copy()
     terminal_df['AbsMargin'] = (terminal_df['scoreP1'] - terminal_df['scoreP2']).abs()
+    
     human_moves = df[df['player'] == 1].dropna(subset=['thinkTime'])
-
-    print("\n" + "="*70)
-    print("PENGUJIAN HIPOTESIS (APA STYLE)")
-    print("="*70)
-
-    # ──────────────────────────────────────────────────────────
-    # H1: Game Balancing — Margin skor DDA < Non-DDA
-    # ──────────────────────────────────────────────────────────
-    print("\n" + "-"*70)
-    print("HIPOTESIS 1 (H1): GAME BALANCING")
-    print("H0: mu_Delta_score_DDA = mu_Delta_score_non-DDA")
-    print("    (Tidak terdapat perbedaan selisih skor antara kondisi DDA dan Non-DDA)")
-    print("Ha: mu_Delta_score_DDA < mu_Delta_score_non-DDA")
-    print("    (Selisih skor pada kondisi DDA lebih kecil dibandingkan Non-DDA)")
-    print("-"*70)
-
-    paired_margin = terminal_df.groupby(['participant', 'isDda'])['AbsMargin'].mean().unstack().dropna()
-    n_h1 = len(paired_margin)
-
-    if n_h1 >= 2:
-        dda_vals = paired_margin[True]
-        nodda_vals = paired_margin[False]
-        diff_h1 = dda_vals - nodda_vals
-        mean_diff = diff_h1.mean()
-        std_diff = diff_h1.std()
-
-        if n_h1 >= 3:
-            _, p_shapiro = stats.shapiro(diff_h1)
-        else:
-            p_shapiro = 0.0
-
-        print(f"\n   A. UJI ASUMSI (Normalitas Selisih)")
-        print(f"      Shapiro-Wilk: p = {p_shapiro:.4f}")
-        print(f"      Keputusan: Data selisih {_apa_normality_decision(p_shapiro)}")
-
-        if p_shapiro > APA_ALPHA or n_h1 < 5:
-            paired_data = pd.DataFrame({'DDA': dda_vals, 'Non-DDA': nodda_vals})
-            paired_test = DescrStatsW(paired_data['DDA'] - paired_data['Non-DDA'])
-            t_stat = paired_test.ttest_mean(0)[0]
-            p_val_two = paired_test.ttest_mean(0)[1]
-            d_cohen = _apa_effect_size_cohens_d(mean_diff, std_diff)
-            effect_desc = _apa_interpret_cohens_d(d_cohen)
-            p_val = p_val_two / 2 if mean_diff < 0 else 1 - p_val_two / 2
-            method = "Paired Samples t-Test (statsmodels, one-tailed)"
-            df_method = n_h1 - 1
-
-            print(f"\n   B. UJI HIPOTESIS (Parametrik, One-Tailed)")
-            print(f"      Metode: {method}")
-            print(f"      t({df_method}) = {t_stat:.3f}, {_apa_interpret_p(p_val)}, d = {d_cohen:.2f} ({effect_desc})")
-        else:
-            t_stat, p_val_two = stats.wilcoxon(dda_vals, nodda_vals)
-            p_val = p_val_two / 2 if mean_diff < 0 else 1 - p_val_two / 2
-            method = "Wilcoxon Signed-Rank Test (scipy, one-tailed)"
-            n_pairs = len(diff_h1)
-            z_stat = (t_stat - n_pairs * (n_pairs + 1) / 4) / np.sqrt(n_pairs * (n_pairs + 1) * (2 * n_pairs + 1) / 24)
-            r_effect = _apa_effect_size_r(z_stat, n_pairs)
-
-            print(f"\n   B. UJI HIPOTESIS (Non-Parametrik, One-Tailed)")
-            print(f"      Metode: {method}")
-            print(f"      W = {t_stat:.1f}, Z = {z_stat:.2f}, {_apa_interpret_p(p_val)}")
-            print(f"      Effect size r = {r_effect:.2f}")
-
-        mean_dda = dda_vals.mean()
-        mean_nodda = nodda_vals.mean()
-        print(f"\n   C. DESKRIPTIF")
-        print(f"      DDA:      M = {mean_dda:.2f}, SD = {dda_vals.std():.2f}")
-        print(f"      Non-DDA:  M = {mean_nodda:.2f}, SD = {nodda_vals.std():.2f}")
-        print(f"      Selisih:  Delta M = {mean_diff:.2f}")
-
-        print(f"\n   D. KEPUTUSAN")
-        if p_val < APA_ALPHA:
-            print(f"      H0 DITOLAK. Terdapat perbedaan signifikan ({_apa_interpret_p(p_val)}).")
-            if mean_dda < mean_nodda:
-                print(f"      -> DDA menghasilkan selisih skor lebih kecil, mendukung H1.")
+    playtime_df = human_moves.groupby(['sessionId', 'participant', 'isDda'])['thinkTime'].sum().reset_index()
+    playtime_df.rename(columns={'thinkTime': 'TotalPlaytime'}, inplace=True)
+    
+    terminal_df['Experience'] = terminal_df['participant'].map(experience_map)
+    playtime_df['Experience'] = playtime_df['participant'].map(experience_map)
+    
+    part_margin = terminal_df.groupby(['participant', 'Experience', 'isDda'])['AbsMargin'].mean().unstack().reset_index()
+    part_playtime = playtime_df.groupby(['participant', 'Experience', 'isDda'])['TotalPlaytime'].mean().unstack().reset_index()
+    
+    t3_rows = []
+    for metric_name, data_df in [('Delta Score (&Delta;S)', part_margin), ('Playtime (seconds)', part_playtime)]:
+        for dda_cond in [True, False]:
+            cond_str = "DDA" if dda_cond else "Non-DDA"
+            y_group = data_df[data_df['Experience'] == 'Y'][dda_cond].dropna()
+            n_group = data_df[data_df['Experience'] == 'N'][dda_cond].dropna()
+            
+            _, p_shapiro_y = stats.shapiro(y_group)
+            _, p_shapiro_n = stats.shapiro(n_group)
+            
+            if p_shapiro_y > 0.05 and p_shapiro_n > 0.05:
+                _, p_levene = stats.levene(y_group, n_group)
+                equal_var = p_levene > 0.05
+                test_stat, p_t = stats.ttest_ind(y_group, n_group, equal_var=equal_var)
+                test_type = "Ind. t-Test"
             else:
-                print(f"      -> Arah berlawanan: DDA justru meningkatkan selisih.")
-        else:
-            print(f"      H0 GAGAL DITOLAK. Tidak ada perbedaan signifikan ({_apa_interpret_p(p_val)}).")
-    else:
-        print("   Data tidak mencukupi untuk uji H1.")
+                test_stat, p_t = stats.mannwhitneyu(y_group, n_group, alternative='two-sided')
+                test_type = "Mann-Whitney U"
+            
+            # Pooled SD for Cohen's d
+            pooled_sd = np.sqrt(((len(y_group)-1)*y_group.var() + (len(n_group)-1)*n_group.var()) / (len(y_group)+len(n_group)-2))
+            cohen_d = (y_group.mean() - n_group.mean()) / pooled_sd if pooled_sd != 0 else 0.0
+            
+            p_t_str = _apa_interpret_p(p_t).replace("p = ", "")
+            
+            t3_rows.append(f"""
+            <tr>
+              <td style="text-align: left; padding: 8px;">{metric_name} in {cond_str}</td>
+              <td style="padding: 8px;">{y_group.mean():.2f}</td>
+              <td style="padding: 8px;">{y_group.std():.2f}</td>
+              <td style="padding: 8px;">{n_group.mean():.2f}</td>
+              <td style="padding: 8px;">{n_group.std():.2f}</td>
+              <td style="padding: 8px;">{test_type}</td>
+              <td style="padding: 8px;">{test_stat:.3f}</td>
+              <td style="padding: 8px;">{p_t_str}</td>
+              <td style="padding: 8px;">{cohen_d:.2f}</td>
+            </tr>
+            """)
+            
+    table3_html = f"""
+    <table class="table-apa" style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman'; margin-top: 15px; margin-bottom: 35px;">
+      <thead>
+        <tr style="border-top: 1.5px solid black; border-bottom: 1px solid black;">
+          <th style="text-align: left; padding: 8px;" rowspan="2">Metric and Condition</th>
+          <th colspan="2" style="border-bottom: 1px solid black; padding: 8px;">Experienced (n = 5)</th>
+          <th colspan="2" style="border-bottom: 1px solid black; padding: 8px;">Inexperienced (n = 5)</th>
+          <th rowspan="2" style="padding: 8px;">Test Type</th>
+          <th rowspan="2" style="padding: 8px;">Statistic</th>
+          <th rowspan="2" style="padding: 8px;">p (Two-Tailed)</th>
+          <th rowspan="2" style="padding: 8px;">Cohen's d</th>
+        </tr>
+        <tr style="border-bottom: 1.5px solid black;">
+          <th style="padding: 8px;">M</th>
+          <th style="padding: 8px;">SD</th>
+          <th style="padding: 8px;">M</th>
+          <th style="padding: 8px;">SD</th>
+        </tr>
+      </thead>
+      <tbody>
+        {"".join(t3_rows[:-1])}
+        <tr style="border-bottom: 1.5px solid black;">
+          {t3_rows[-1].replace('<tr>', '').replace('</tr>', '')}
+        </tr>
+      </tbody>
+    </table>
+    <div style="font-size: 11px; text-align: left; font-family: 'Times New Roman'; margin-top: -25px; margin-bottom: 30px;">
+      <i>Note.</i> Cohen's d is calculated based on pooled standard deviation. Test Type changes dynamically based on Shapiro-Wilk normality test results.
 
-    # ──────────────────────────────────────────────────────────
-    # H2: Engagement — Waktu Berpikir DDA vs Non-DDA (Two-tailed)
-    # ──────────────────────────────────────────────────────────
-    print("\n" + "-"*70)
-    print("HIPOTESIS 2 (H2): ENGAGEMENT (Waktu Berpikir)")
-    print("H0: mu_thinkTime_DDA = mu_thinkTime_non-DDA")
-    print("    (Tidak terdapat perbedaan rata-rata waktu berpikir antara DDA dan Non-DDA)")
-    print("Ha: mu_thinkTime_DDA != mu_thinkTime_non-DDA")
-    print("    (Terdapat perbedaan rata-rata waktu berpikir antara DDA dan Non-DDA)")
-    print("-"*70)
-
-    paired_think = human_moves.groupby(['participant', 'isDda'])['thinkTime'].mean().unstack().dropna()
-    n_h2 = len(paired_think)
-
-    if n_h2 >= 2:
-        dda_t = paired_think[True]
-        nodda_t = paired_think[False]
-        diff_t = dda_t - nodda_t
-        mean_diff_t = diff_t.mean()
-        std_diff_t = diff_t.std()
-
-        if n_h2 >= 3:
-            _, p_shapiro_t = stats.shapiro(diff_t)
-        else:
-            p_shapiro_t = 0.0
-
-        print(f"\n   A. UJI ASUMSI (Normalitas Selisih)")
-        print(f"      Shapiro-Wilk: p = {p_shapiro_t:.4f}")
-        print(f"      Keputusan: Data selisih {_apa_normality_decision(p_shapiro_t)}")
-
-        if p_shapiro_t > APA_ALPHA or n_h2 < 5:
-            paired_data_t = pd.DataFrame({'DDA': dda_t, 'Non-DDA': nodda_t})
-            paired_test_t = DescrStatsW(paired_data_t['DDA'] - paired_data_t['Non-DDA'])
-            t_stat_t = paired_test_t.ttest_mean(0)[0]
-            p_val_t = paired_test_t.ttest_mean(0)[1]
-            method_t = "Paired Samples t-Test (statsmodels, two-tailed)"
-            df_t = n_h2 - 1
-            d_cohen_t = _apa_effect_size_cohens_d(mean_diff_t, std_diff_t)
-            effect_desc_t = _apa_interpret_cohens_d(d_cohen_t)
-
-            print(f"\n   B. UJI HIPOTESIS (Parametrik, Two-Tailed)")
-            print(f"      Metode: {method_t}")
-            print(f"      t({df_t}) = {t_stat_t:.3f}, {_apa_interpret_p(p_val_t)}, d = {d_cohen_t:.2f} ({effect_desc_t})")
-        else:
-            t_stat_t, p_val_t = stats.wilcoxon(dda_t, nodda_t)
-            method_t = "Wilcoxon Signed-Rank Test (scipy, two-tailed)"
-            n_pairs_t = len(diff_t)
-            z_stat_t = (t_stat_t - n_pairs_t * (n_pairs_t + 1) / 4) / np.sqrt(n_pairs_t * (n_pairs_t + 1) * (2 * n_pairs_t + 1) / 24)
-            r_effect_t = _apa_effect_size_r(z_stat_t, n_pairs_t)
-
-            print(f"\n   B. UJI HIPOTESIS (Non-Parametrik, Two-Tailed)")
-            print(f"      Metode: {method_t}")
-            print(f"      W = {t_stat_t:.1f}, Z = {z_stat_t:.2f}, {_apa_interpret_p(p_val_t)}")
-            print(f"      Effect size r = {r_effect_t:.2f}")
-
-        mean_dda_t = dda_t.mean()
-        mean_nodda_t = nodda_t.mean()
-        print(f"\n   C. DESKRIPTIF")
-        print(f"      DDA:      M = {mean_dda_t:.2f}, SD = {dda_t.std():.2f}")
-        print(f"      Non-DDA:  M = {mean_nodda_t:.2f}, SD = {nodda_t.std():.2f}")
-        print(f"      Selisih:  Delta M = {mean_diff_t:.2f}")
-
-        print(f"\n   D. KEPUTUSAN")
-        if p_val_t < APA_ALPHA:
-            print(f"      H0 DITOLAK. Terdapat perbedaan signifikan ({_apa_interpret_p(p_val_t)}).")
-            if mean_dda_t > mean_nodda_t:
-                print(f"      -> Waktu berpikir DDA lebih lama.")
-            else:
-                print(f"      -> Waktu berpikir Non-DDA lebih lama.")
-        else:
-            print(f"      H0 GAGAL DITOLAK. Tidak ada perbedaan signifikan ({_apa_interpret_p(p_val_t)}).")
-    else:
-        print("   Data tidak mencukupi untuk uji H2.")
-
-    print("\n" + "="*70)
-
-
-# ──────────────────────────────────────────────────────────────
-# 3. APA-STYLE SUMMARY TABLE (Plain Text)
-# ──────────────────────────────────────────────────────────────
-def print_apa_summary_table(df):
-    terminal_df = df[df['isTerminal'] == True].copy()
-    if terminal_df.empty:
-        terminal_df = df.sort_values('turn').groupby('sessionId').tail(1).copy()
-    terminal_df['AbsMargin'] = (terminal_df['scoreP1'] - terminal_df['scoreP2']).abs()
-    human_moves = df[df['player'] == 1].dropna(subset=['thinkTime'])
-
-    # H1
-    paired_margin = terminal_df.groupby(['participant', 'isDda'])['AbsMargin'].mean().unstack().dropna()
-    if len(paired_margin) >= 2:
-        dda_m = paired_margin[True]
-        nodda_m = paired_margin[False]
-        diff_m = dda_m - nodda_m
-        mean_diff_m = diff_m.mean()
-        if len(diff_m) >= 3:
-            _, p_norm_m = stats.shapiro(diff_m)
-        else:
-            p_norm_m = 1.0
-        if p_norm_m > APA_ALPHA or len(paired_margin) < 5:
-            t_h1, p_h1_two = stats.ttest_rel(dda_m, nodda_m)
-            p_h1 = p_h1_two / 2 if mean_diff_m < 0 else 1 - p_h1_two / 2
-            stat_h1 = f"t({len(paired_margin)-1}) = {t_h1:.3f}"
-            d_h1 = _apa_effect_size_cohens_d(mean_diff_m, diff_m.std())
-            es_h1 = f"d = {d_h1:.2f}"
-        else:
-            w_h1, p_h1_two = stats.wilcoxon(dda_m, nodda_m)
-            p_h1 = p_h1_two / 2 if mean_diff_m < 0 else 1 - p_h1_two / 2
-            n_p = len(diff_m)
-            z_h1 = (w_h1 - n_p * (n_p + 1) / 4) / np.sqrt(n_p * (n_p + 1) * (2 * n_p + 1) / 24)
-            stat_h1 = f"Z = {z_h1:.2f}"
-            r_h1 = _apa_effect_size_r(z_h1, n_p)
-            es_h1 = f"r = {r_h1:.2f}"
-    else:
-        p_h1 = 1.0
-        stat_h1 = "N/A"
-        es_h1 = "N/A"
-
-    # H2
-    paired_think = human_moves.groupby(['participant', 'isDda'])['thinkTime'].mean().unstack().dropna()
-    if len(paired_think) >= 2:
-        dda_t = paired_think[True]
-        nodda_t = paired_think[False]
-        diff_t = dda_t - nodda_t
-        mean_diff_t = diff_t.mean()
-        if len(diff_t) >= 3:
-            _, p_norm_t = stats.shapiro(diff_t)
-        else:
-            p_norm_t = 1.0
-        if p_norm_t > APA_ALPHA or len(paired_think) < 5:
-            t_h2, p_h2_two = stats.ttest_rel(dda_t, nodda_t)
-            p_h2 = p_h2_two / 2 if mean_diff_t < 0 else 1 - p_h2_two / 2
-            stat_h2 = f"t({len(paired_think)-1}) = {t_h2:.3f}"
-            d_h2 = _apa_effect_size_cohens_d(mean_diff_t, diff_t.std())
-            es_h2 = f"d = {d_h2:.2f}"
-        else:
-            w_h2, p_h2_two = stats.wilcoxon(dda_t, nodda_t)
-            p_h2 = p_h2_two / 2 if mean_diff_t < 0 else 1 - p_h2_two / 2
-            n_p2 = len(diff_t)
-            z_h2 = (w_h2 - n_p2 * (n_p2 + 1) / 4) / np.sqrt(n_p2 * (n_p2 + 1) * (2 * n_p2 + 1) / 24)
-            stat_h2 = f"Z = {z_h2:.2f}"
-            r_h2 = _apa_effect_size_r(z_h2, n_p2)
-            es_h2 = f"r = {r_h2:.2f}"
-    else:
-        p_h2 = 1.0
-        stat_h2 = "N/A"
-        es_h2 = "N/A"
-
-    print("\n" + "="*70)
-    print("TABEL RINGKASAN HASIL UJI HIPOTESIS (APA STYLE)")
-    print("="*70)
-    print(f"{'Hipotesis':<40} {'Uji Statistik':<25} {'p':<12} {'Effect Size':<15} {'Keputusan':<15}")
-    print("-"*107)
-    print(f"{'H1: Margin DDA < Non-DDA':<40} {stat_h1:<25} {_apa_interpret_p(p_h1):<12} {es_h1:<15} {_apa_decision(p_h1):<15}")
-    print(f"{'H2: ThinkTime DDA vs Non-DDA':<40} {stat_h2:<25} {_apa_interpret_p(p_h2):<12} {es_h2:<15} {_apa_decision(p_h2):<15}")
-    print("="*107)
-    print("Catatan: alpha = .05. Effect size: d = Cohen's d, r = rank-biserial correlation.")
-    print()
-
-
-# ──────────────────────────────────────────────────────────────
-# VISUALIZATION — MAINSTREAM GRAPHS ONLY
-# ──────────────────────────────────────────────────────────────
-def plot_thinktime_boxplot(df, timestamp_str):
-    """Boxplot distribusi think time per kondisi dengan stripplot."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    human_moves = df[df['player'] == 1].dropna(subset=['thinkTime']).copy()
-    if human_moves.empty:
-        print("[WARN] Tidak ada data think time.")
-        return
-    
-    plt.figure(figsize=(8, 6))
-    # Boxplot dengan stripplot (data point individual dengan warna yang sama)
-    sns.boxplot(x='isDda', y='thinkTime', data=human_moves, palette=['#e74c3c', '#2ecc71'])
-    # Stripplot dengan warna sesuai kelompok
-    for dda_label, color in [(False, '#e74c3c'), (True, '#2ecc71')]:
-        subset = human_moves[human_moves['isDda'] == dda_label]
-        sns.stripplot(x='isDda', y='thinkTime', data=subset, color=color, 
-                      alpha=0.6, size=4, jitter=0.2)
-    plt.title('Boxplot Waktu Berpikir\nDDA vs Non-DDA', fontsize=13, fontweight='bold')
-    plt.xlabel('Kondisi', fontsize=11)
-    plt.ylabel('thinkTime (s)', fontsize=11)
-    plt.xticks([0, 1], ['Non-DDA\n(AI Statis)', 'DDA\n(AI Adaptif)'])
-    plt.grid(True, linestyle='--', alpha=0.5)
-    # Tambahkan legend
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='#e74c3c', label='Non-DDA (AI Statis)'),
-                       Patch(facecolor='#2ecc71', label='DDA (AI Adaptif)')]
-    plt.legend(handles=legend_elements, loc='upper right', frameon=True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(script_dir, f'thinktime_boxplot_{timestamp_str}.png'), dpi=300)
-    plt.close()
-    print(f"[INFO] Grafik think time (boxplot + stripplot) disimpan ke: thinktime_boxplot_{timestamp_str}.png")
-
-def plot_thinktime_bar(df, timestamp_str):
-    """Bar chart rerata think time per kondisi dengan error bar (SD) - participant-level."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    human_moves = df[df['player'] == 1].dropna(subset=['thinkTime']).copy()
-    if human_moves.empty:
-        print("[WARN] Tidak ada data think time.")
-        return
-    
-    # Agregasi per participant (sesuai dengan uji hipotesis)
-    part_think = human_moves.groupby(['participant', 'isDda'])['thinkTime'].mean().unstack().dropna()
-    n_participants = len(part_think)
-    
-    # Hitung statistik per kondisi (mean dan SD across participants)
-    stats_data = []
-    for dda_label, dda_name in [(False, 'Non-DDA'), (True, 'DDA')]:
-        if dda_label in part_think.columns:
-            values = part_think[dda_label]
-            mean_val = values.mean()
-            sd_val = values.std()
-            stats_data.append({'isDda': dda_label, 'mean': mean_val, 'sd': sd_val})
-            print(f"   [{dda_name}] N = {len(values)}, Mean = {mean_val:.2f}, SD = {sd_val:.2f}")
-    
-    # Buat DataFrame untuk barplot
-    bar_data = pd.DataFrame({
-        'isDda': [False, True],
-        'thinkTime': [stats_data[0]['mean'], stats_data[1]['mean']],
-        'sd': [stats_data[0]['sd'], stats_data[1]['sd']]
-    })
-    
-    plt.figure(figsize=(8, 6))
-    # Bar chart dengan SD error bar (konsisten dengan uji-t N=7)
-    ax = sns.barplot(x='isDda', y='thinkTime', data=bar_data, palette=['#e74c3c', '#2ecc71'], 
-                     errorbar=('sd', 0), capsize=0.1, errwidth=1.5)
-    
-    # Tambahkan error bar manual dengan SD yang benar
-    for i, row in bar_data.iterrows():
-        ax.errorbar(i, row['thinkTime'], yerr=row['sd'], 
-                    fmt='none', color='black', capsize=5, capthick=1.5, elinewidth=1.5)
-    
-    plt.title(f'Rata-Rata Waktu Berpikir (N = {n_participants} partisipan)\nDDA vs Non-DDA', fontsize=13, fontweight='bold')
-    plt.xlabel('Kondisi', fontsize=11)
-    plt.ylabel('thinkTime (s)', fontsize=11)
-    plt.xticks([0, 1], ['Non-DDA\n(AI Statis)', 'DDA\n(AI Adaptif)'])
-    plt.grid(True, linestyle='--', alpha=0.5)
-    # Tambahkan legend
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='#e74c3c', label='Non-DDA (AI Statis)'),
-                       Patch(facecolor='#2ecc71', label='DDA (AI Adaptif)')]
-    plt.legend(handles=legend_elements, loc='upper right', frameon=True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(script_dir, f'thinktime_bar_{timestamp_str}.png'), dpi=300)
-    plt.close()
-    print(f"[INFO] Grafik think time (bar, participant-level) disimpan ke: thinktime_bar_{timestamp_str}.png")
-
-def plot_thinktime_distribution(df, timestamp_str):
-    """Distribusi waktu berpikir per kondisi (histogram + KDE)."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    human_moves = df[df['player'] == 1].dropna(subset=['thinkTime']).copy()
-    if human_moves.empty:
-        print("[WARN] Tidak ada data think time untuk distribusi.")
-        return
-    
-    plt.figure(figsize=(10, 6))
-    for dda_label, dda_name, color in [(True, 'DDA', '#2ecc71'), (False, 'Non-DDA', '#e74c3c')]:
-        data = human_moves[human_moves['isDda'] == dda_label]['thinkTime']
-        if len(data) > 1:
-            sns.kdeplot(data, label=dda_name, color=color, fill=True, alpha=0.3, linewidth=2)
-            plt.hist(data, bins=30, alpha=0.4, color=color, density=True)
-    
-    plt.title('Distribusi Waktu Berpikir\nDDA vs Non-DDA', fontsize=13, fontweight='bold')
-    plt.xlabel('thinkTime (s)', fontsize=11)
-    plt.ylabel('Density', fontsize=11)
-    plt.legend(title='Kondisi')
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.tight_layout()
-    plt.savefig(os.path.join(script_dir, f'thinktime_dist_{timestamp_str}.png'), dpi=300)
-    plt.close()
-    print(f"[INFO] Grafik distribusi think time disimpan ke: thinktime_dist_{timestamp_str}.png")
-
-def plot_thinktime_by_turn(df, timestamp_str):
-    """Waktu berpikir per giliran (turn) untuk kedua kondisi."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    human_moves = df[df['player'] == 1].dropna(subset=['thinkTime']).copy()
-    if human_moves.empty:
-        print("[WARN] Tidak ada data think time per turn.")
-        return
-    
-    turn_agg = human_moves.groupby(['turn', 'isDda'])['thinkTime'].mean().unstack()
-    
-    plt.figure(figsize=(12, 6))
-    for dda_label, dda_name, color in [(True, 'DDA', '#2ecc71'), (False, 'Non-DDA', '#e74c3c')]:
-        if dda_label in turn_agg.columns:
-            plt.plot(turn_agg.index, turn_agg[dda_label], marker='o', label=dda_name, color=color, alpha=0.8)
-    
-    plt.title('Rata-Rata Waktu Berpikir per Giliran (Turn)', fontsize=13, fontweight='bold')
-    plt.xlabel('Giliran (Turn)', fontsize=11)
-    plt.ylabel('thinkTime (s)', fontsize=11)
-    plt.legend(title='Kondisi')
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.tight_layout()
-    plt.savefig(os.path.join(script_dir, f'thinktime_by_turn_{timestamp_str}.png'), dpi=300)
-    plt.close()
-    print(f"[INFO] Grafik think time per turn disimpan ke: thinktime_by_turn_{timestamp_str}.png")
-
-def plot_scoremargin_boxplot(df, timestamp_str):
-    """Boxplot distribusi selisih skor per kondisi dengan stripplot."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    terminal_df = df[df['isTerminal'] == True].copy()
-    if terminal_df.empty:
-        terminal_df = df.sort_values('turn').groupby('sessionId').tail(1).copy()
-    terminal_df['AbsMargin'] = (terminal_df['scoreP1'] - terminal_df['scoreP2']).abs()
-    
-    plt.figure(figsize=(8, 6))
-    # Boxplot dengan stripplot (data point individual dengan warna yang sama)
-    sns.boxplot(x='isDda', y='AbsMargin', data=terminal_df, palette=['#e74c3c', '#2ecc71'])
-    # Stripplot dengan warna sesuai kelompok
-    for dda_label, color in [(False, '#e74c3c'), (True, '#2ecc71')]:
-        subset = terminal_df[terminal_df['isDda'] == dda_label]
-        sns.stripplot(x='isDda', y='AbsMargin', data=subset, color=color, 
-                      alpha=0.6, size=4, jitter=0.2)
-    plt.title('Boxplot Selisih Skor\nDDA vs Non-DDA', fontsize=13, fontweight='bold')
-    plt.xlabel('Kondisi', fontsize=11)
-    plt.ylabel('Δscore', fontsize=11)
-    plt.xticks([0, 1], ['Non-DDA\n(AI Statis)', 'DDA\n(AI Adaptif)'])
-    plt.grid(True, linestyle='--', alpha=0.5)
-    # Tambahkan legend
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='#e74c3c', label='Non-DDA (AI Statis)'),
-                       Patch(facecolor='#2ecc71', label='DDA (AI Adaptif)')]
-    plt.legend(handles=legend_elements, loc='upper right', frameon=True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(script_dir, f'scoremargin_boxplot_{timestamp_str}.png'), dpi=300)
-    plt.close()
-    print(f"[INFO] Grafik score margin (boxplot + stripplot) disimpan ke: scoremargin_boxplot_{timestamp_str}.png")
-
-def plot_scoremargin_bar(df, timestamp_str):
-    """Bar chart rerata selisih skor per kondisi dengan error bar (SD) - participant-level."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    terminal_df = df[df['isTerminal'] == True].copy()
-    if terminal_df.empty:
-        terminal_df = df.sort_values('turn').groupby('sessionId').tail(1).copy()
-    terminal_df['AbsMargin'] = (terminal_df['scoreP1'] - terminal_df['scoreP2']).abs()
-    
-    # Agregasi per participant (sesuai dengan uji hipotesis)
-    part_margin = terminal_df.groupby(['participant', 'isDda'])['AbsMargin'].mean().unstack().dropna()
-    n_participants = len(part_margin)
-    
-    # Hitung statistik per kondisi (mean dan SD across participants)
-    stats_data = []
-    for dda_label, dda_name in [(False, 'Non-DDA'), (True, 'DDA')]:
-        if dda_label in part_margin.columns:
-            values = part_margin[dda_label]
-            mean_val = values.mean()
-            sd_val = values.std()
-            stats_data.append({'isDda': dda_label, 'mean': mean_val, 'sd': sd_val})
-            print(f"   [{dda_name}] N = {len(values)}, Mean = {mean_val:.2f}, SD = {sd_val:.2f}")
-    
-    # Buat DataFrame untuk barplot
-    bar_data = pd.DataFrame({
-        'isDda': [False, True],
-        'AbsMargin': [stats_data[0]['mean'], stats_data[1]['mean']],
-        'sd': [stats_data[0]['sd'], stats_data[1]['sd']]
-    })
-    
-    plt.figure(figsize=(8, 6))
-    # Bar chart dengan SD error bar (konsisten dengan uji-t N=7)
-    ax = sns.barplot(x='isDda', y='AbsMargin', data=bar_data, palette=['#e74c3c', '#2ecc71'], 
-                     errorbar=('sd', 0), capsize=0.1, errwidth=1.5)
-    
-    # Tambahkan error bar manual dengan SD yang benar
-    for i, row in bar_data.iterrows():
-        ax.errorbar(i, row['AbsMargin'], yerr=row['sd'], 
-                    fmt='none', color='black', capsize=5, capthick=1.5, elinewidth=1.5)
-    
-    plt.title(f'Rata-Rata Selisih Skor (N = {n_participants} partisipan)\nDDA vs Non-DDA', fontsize=13, fontweight='bold')
-    plt.xlabel('Kondisi', fontsize=11)
-    plt.ylabel('Δscore', fontsize=11)
-    plt.xticks([0, 1], ['Non-DDA\n(AI Statis)', 'DDA\n(AI Adaptif)'])
-    plt.grid(True, linestyle='--', alpha=0.5)
-    # Tambahkan legend
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='#e74c3c', label='Non-DDA (AI Statis)'),
-                       Patch(facecolor='#2ecc71', label='DDA (AI Adaptif)')]
-    plt.legend(handles=legend_elements, loc='upper right', frameon=True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(script_dir, f'scoremargin_bar_{timestamp_str}.png'), dpi=300)
-    plt.close()
-    print(f"[INFO] Grafik score margin (bar, participant-level) disimpan ke: scoremargin_bar_{timestamp_str}.png")
-
-def plot_score_progression(df, timestamp_str):
+    </div>
     """
-    Menghasilkan dua plot progresi skor: satu untuk sesi DDA, satu untuk sesi Non-DDA.
-    Tanpa menampilkan nama participant (anonim).
-    """
+    add_to_html("5a. Independent Samples t-Tests Comparing Experienced and Inexperienced Players (Table 3)", table3_html)
+
+# ──────────────────────────────────────────────────────────────
+# 4. VISUALIZATION & HTML EMBEDDING
+# ──────────────────────────────────────────────────────────────
+def generate_plots_and_html(paired_margin, paired_playtime, terminal_df, df):
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Pilih sesi terakhir untuk masing-masing kondisi jika tidak disediakan
-    dda_sessions = df[df['isDda'] == True]['sessionId'].unique()
-    session_id_dda = dda_sessions[1] if len(dda_sessions) > 0 else None
-    nodda_sessions = df[df['isDda'] == False]['sessionId'].unique()
-    session_id_nodda = nodda_sessions[1] if len(nodda_sessions) > 0 else None
-    
-    for session_id, label, is_dda in [
-        (session_id_dda, 'DDA', True),
-        (session_id_nodda, 'Non-DDA', False)
-    ]:
-        if session_id is None:
-            continue
-        session_data = df[df['sessionId'] == session_id].copy()
-        if session_data.empty:
-            continue
-        plt.figure(figsize=(12, 6))
-        plt.plot(session_data['turn'], session_data['scoreP1'], label='P1 (Human)', marker='o', color='#ff0000')
-        plt.plot(session_data['turn'], session_data['scoreP2'], label='P2 (AI)', marker='s', color="#0000ff")
-        plt.title(f'Progresi Skor — {label}', fontsize=12)
-        plt.xlabel('Giliran (Turn)')
-        plt.ylabel('Skor')
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.5)
+    plot_paths = {}
+
+    # 1a. Bar Chart H1 (Margin / Delta Score)
+    if not paired_margin.empty:
+        plot_df = paired_margin.reset_index().melt(id_vars='participant', value_name='Margin', var_name='isDda')
+        plt.figure(figsize=(6, 4))
+        sns.barplot(data=plot_df, x='isDda', y='Margin', errorbar='se', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, capsize=0.1)
+        plt.title('Mean ΔSkor')
+        plt.xticks([0, 1], ['Non-DDA', 'DDA'])
+        plt.ylabel('ΔSkor')
+        plt.xlabel('Kondisi')
         plt.tight_layout()
-        fname = f'score_progression_{label.lower()}_{timestamp_str}.png'
-        plt.savefig(os.path.join(script_dir, fname), dpi=300)
+        margin_bar_path = f'chart_H1_margin_bar_{ts}.png'
+        plt.savefig(os.path.join(script_dir, margin_bar_path))
         plt.close()
-        print(f"[INFO] Grafik progresi skor ({label}) disimpan ke: {fname}")
+        plot_paths['mean_delta_score'] = margin_bar_path
 
-def plot_score_diff_by_turn(df, timestamp_str):
-    """Score difference per turn untuk kedua kondisi."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    terminal_df = df[df['isTerminal'] == True].copy()
-    if terminal_df.empty:
-        terminal_df = df.sort_values('turn').groupby('sessionId').tail(1).copy()
-    
-    # Hitung score diff per turn
-    df_with_margin = df.copy()
-    df_with_margin['scoreDiff'] = df_with_margin['scoreP1'] - df_with_margin['scoreP2']
-    
-    # Agregasi per turn dan kondisi
-    turn_diff = df_with_margin.groupby(['turn', 'isDda'])['scoreDiff'].mean().unstack()
-    
-    plt.figure(figsize=(12, 6))
-    for dda_label, dda_name, color in [(True, 'DDA', '#2ecc71'), (False, 'Non-DDA', '#e74c3c')]:
-        if dda_label in turn_diff.columns:
-            plt.plot(turn_diff.index, turn_diff[dda_label], marker='o', label=dda_name, color=color, alpha=0.8, linewidth=2)
-    
-    plt.axhline(0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-    plt.title('Rata-Rata Selisih Skor per Giliran (Turn)\n(Positif = Human unggul, Negatif = AI unggul)', fontsize=13, fontweight='bold')
-    plt.xlabel('Giliran (Turn)', fontsize=11)
-    plt.ylabel('Selisih Skor (P1 - P2)', fontsize=11)
-    plt.legend(title='Kondisi')
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.tight_layout()
-    plt.savefig(os.path.join(script_dir, f'scorediff_by_turn_{timestamp_str}.png'), dpi=300)
-    plt.close()
-    print(f"[INFO] Grafik score diff per turn disimpan ke: scorediff_by_turn_{timestamp_str}.png")
+    # 1b. Boxplot H1 (Margin / Delta Score)
+    if not paired_margin.empty:
+        plot_df = paired_margin.reset_index().melt(id_vars='participant', value_name='Margin', var_name='isDda')
+        plt.figure(figsize=(6, 4))
+        sns.boxplot(data=plot_df, x='isDda', y='Margin', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, width=0.5, showfliers=False)
+        sns.stripplot(data=plot_df, x='isDda', y='Margin', color='black', alpha=0.6, jitter=True, size=5)
+        # plt.title('Distribusi ΔSkor (Game Balance)')
+        plt.title('Distribusi ΔSkor')
+        plt.xticks([0, 1], ['Non-DDA', 'DDA'])
+        plt.ylabel('ΔSkor')
+        plt.xlabel('Kondisi')
+        plt.tight_layout()
+        margin_path = f'chart_H1_margin_box_{ts}.png'
+        plt.savefig(os.path.join(script_dir, margin_path))
+        plt.close()
+        plot_paths['delta_score_distribution'] = margin_path
+        
+    # 2a. Bar Chart H2 (Playtime / Waktu Berpikir)
+    if not paired_playtime.empty:
+        plot_df2 = paired_playtime.reset_index().melt(id_vars='participant', value_name='Playtime', var_name='isDda')
+        plt.figure(figsize=(6, 4))
+        sns.barplot(data=plot_df2, x='isDda', y='Playtime', errorbar='se', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, capsize=0.1)
+        plt.title('Mean Playtime')
+        plt.xticks([0, 1], ['Non-DDA', 'DDA'])
+        plt.ylabel('Total Playtime (detik)')
+        plt.xlabel('Kondisi')
+        plt.tight_layout()
+        playtime_bar_path = f'chart_H2_playtime_bar_{ts}.png'
+        plt.savefig(os.path.join(script_dir, playtime_bar_path))
+        plt.close()
+        plot_paths['mean_playtime'] = playtime_bar_path
 
+    # 2b. Boxplot H2 (Playtime / Waktu Berpikir)
+    if not paired_playtime.empty:
+        plot_df2 = paired_playtime.reset_index().melt(id_vars='participant', value_name='Playtime', var_name='isDda')
+        plt.figure(figsize=(6, 4))
+        sns.boxplot(data=plot_df2, x='isDda', y='Playtime', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, width=0.5, showfliers=False)
+        sns.stripplot(data=plot_df2, x='isDda', y='Playtime', color='black', alpha=0.6, jitter=True, size=5)
+        # plt.title('Distribusi Waktu Berpikir (Cognitive Load)')
+        plt.title('Distribusi Waktu Berpikir')
+        plt.xticks([0, 1], ['Non-DDA', 'DDA'])
+        plt.ylabel('thinkTime (detik)')
+        plt.xlabel('Kondisi')
+        plt.tight_layout()
+        playtime_path = f'chart_H2_playtime_box_{ts}.png'
+        plt.savefig(os.path.join(script_dir, playtime_path))
+        plt.close()
+        plot_paths['playtime_distribution'] = playtime_path
 
-# ──────────────────────────────────────────────────────────────
-# MAIN
-# ──────────────────────────────────────────────────────────────
+    # 3. Scatter Plot Mekanisme DDA (v vs simulations)
+    dda_moves = df[(df['isDda'] == True) & (df['player'] == -1) & (df['v'].notnull()) & (df['simulations'].notnull())]
+    if not dda_moves.empty:
+        plt.figure(figsize=(6, 4))
+        sns.regplot(data=dda_moves, x='v', y='simulations', scatter_kws={'alpha':0.4, 'color':'#2980b9'}, line_kws={'color':'#c0392b', 'linewidth': 2})
+        plt.title('Mekanisme AlphaDDA\n(State Value vs MCTS Simulations)')
+        plt.xlabel('Nilai Evaluasi Posisi (v)')
+        plt.ylabel('Jumlah Simulasi MCTS')
+        plt.tight_layout()
+        mech_path = f'chart_dda_mechanism_{ts}.png'
+        plt.savefig(os.path.join(script_dir, mech_path))
+        plt.close()
+        plot_paths['dda_mechanism'] = mech_path
+        
+    # 4. Grafik Garis Trajektori V-Value (Turn-by-Turn)
+    v_moves = df[(df['player'] == -1) & (df['v'].notnull())]
+    if not v_moves.empty:
+        plt.figure(figsize=(7, 4))
+        # Filter turn <= 100 agar grafiknya tidak terlalu panjang/gepeng ke kanan
+        plot_v_moves = v_moves[v_moves['turn'] <= 100].copy()
+        plot_v_moves['isDda_str'] = plot_v_moves['isDda'].map({True: 'DDA', False: 'Non-DDA'})
+        sns.lineplot(data=plot_v_moves, x='turn', y='v', hue='isDda_str', palette={'DDA': '#2ecc71', 'Non-DDA': '#e74c3c'}, errorbar=None, linewidth=2)
+        plt.title('Trajektori Rata-Rata Evaluasi Posisi AI (v) Sepanjang Giliran')
+        plt.xlabel('Giliran (Turn)')
+        plt.ylabel('Nilai Evaluasi AI (v)')
+        plt.axhline(0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+        plt.legend(title='Kondisi')
+        plt.tight_layout()
+        traj_path = f'chart_v_trajectory_{ts}.png'
+        plt.savefig(os.path.join(script_dir, traj_path))
+        plt.close()
+        plot_paths['v_trajectory'] = traj_path
+
+    # 4b. Grafik Trajektori Score Difference per Turn (P1 - P2)
+    score_traj = df[df['scoreP1'].notnull() & df['scoreP2'].notnull()].copy()
+    if not score_traj.empty:
+        score_traj['ScoreDiff'] = score_traj['scoreP1'] - score_traj['scoreP2']
+        plt.figure(figsize=(7, 4))
+        plot_score_traj = score_traj[score_traj['turn'] <= 100].copy()
+        plot_score_traj['isDda_str'] = plot_score_traj['isDda'].map({True: 'DDA', False: 'Non-DDA'})
+        sns.lineplot(data=plot_score_traj, x='turn', y='ScoreDiff', hue='isDda_str', palette={'DDA': '#2ecc71', 'Non-DDA': '#e74c3c'}, errorbar=None, linewidth=2)
+        plt.title('Trajektori Selisih Skor (Human - AI) Sepanjang Permainan')
+        plt.xlabel('Giliran (Turn)')
+        plt.ylabel('scoreP1 - scoreP2')
+        plt.axhline(0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+        plt.legend(title='Kondisi')
+        plt.tight_layout()
+        scorediff_path = f'chart_scorediff_trajectory_{ts}.png'
+        plt.savefig(os.path.join(script_dir, scorediff_path))
+        plt.close()
+        plot_paths['scorediff_trajectory'] = scorediff_path
+
+    # 4c. Boxplot Think Time per Turn (Distribusi Waktu Keputusan per Langkah)
+    human_moves_all = df[df['player'] == 1].dropna(subset=['thinkTime']).copy()
+    if not human_moves_all.empty:
+        human_moves_all['isDda_str'] = human_moves_all['isDda'].map({True: 'DDA', False: 'Non-DDA'})
+        plt.figure(figsize=(6, 4))
+        sns.boxplot(data=human_moves_all, x='isDda_str', y='thinkTime', hue='isDda_str', palette={'DDA': '#2ecc71', 'Non-DDA': '#e74c3c'}, legend=False, width=0.5, showfliers=False)
+        sample_moves = human_moves_all.sample(min(500, len(human_moves_all)), random_state=42)
+        sns.stripplot(data=sample_moves, x='isDda_str', y='thinkTime', color='black', alpha=0.3, jitter=True, size=3)
+        plt.title('Distribusi Waktu Berpikir per Langkah\n(thinkTime per turn)')
+        plt.xlabel('Kondisi')
+        plt.ylabel('thinkTime (detik)')
+        plt.tight_layout()
+        tt_path = f'chart_thinktime_per_turn_box_{ts}.png'
+        plt.savefig(os.path.join(script_dir, tt_path))
+        plt.close()
+        plot_paths['thinktime_per_turn'] = tt_path
+    # 4d. Grafik Trajektori Think Time per Turn (P1)
+    if not human_moves_all.empty:
+        plt.figure(figsize=(7, 4))
+        plot_tt_traj = human_moves_all[human_moves_all['turn'] <= 100].copy()
+        sns.lineplot(data=plot_tt_traj, x='turn', y='thinkTime', hue='isDda_str', palette={'DDA': '#2ecc71', 'Non-DDA': '#e74c3c'}, errorbar='se', linewidth=2)
+        plt.title('Trajektori Rata-Rata Waktu Berpikir Sepanjang Permainan')
+        plt.xlabel('Giliran (Turn)')
+        plt.ylabel('thinkTime (detik)')
+        plt.legend(title='Kondisi')
+        plt.tight_layout()
+        tt_traj_path = f'chart_thinktime_trajectory_{ts}.png'
+        plt.savefig(os.path.join(script_dir, tt_traj_path))
+        plt.close()
+        plot_paths['thinktime_trajectory'] = tt_traj_path
+
+    # 5. Heatmap Frekuensi Move Pilihan (0-6)
+    moves_df = df[df['move'].isin(range(7))].copy()
+    if not moves_df.empty:
+        # Group and calculate percentages per (isDda, player)
+        move_counts = moves_df.groupby(['isDda', 'player', 'move']).size().unstack(fill_value=0)
+        move_pcts = move_counts.div(move_counts.sum(axis=1), axis=0) * 100
+        
+        # Rename index for better display
+        move_pcts.index = move_pcts.index.map(lambda x: (
+            f"DDA | AI (P2)" if x[0] and x[1] == -1 else
+            f"DDA | Human (P1)" if x[0] and x[1] == 1 else
+            f"Non-DDA | AI (P2)" if not x[0] and x[1] == -1 else
+            f"Non-DDA | Human (P1)"
+        ))
+        
+        plt.figure(figsize=(8, 5))
+        sns.heatmap(move_pcts, annot=True, fmt=".1f", cmap="YlGnBu", cbar_kws={'label': 'Persentase Pilihan (%)'}, linewidths=0.5)
+        plt.title('Heatmap Preferensi Pemilihan Lubang (Move 0-6)\n(Persentase per Kondisi & Pemain)')
+        plt.ylabel('Kondisi & Pemain')
+        plt.xlabel('Nomor Lubang (0-6)')
+        plt.tight_layout()
+        heatmap_path = f'chart_moves_heatmap_{ts}.png'
+        plt.savefig(os.path.join(script_dir, heatmap_path))
+        plt.close()
+        plot_paths['preferensi_lubang'] = heatmap_path
+
+    # Embed images directly inside HTML as Base64 to make it a standalone portable file
+    img_html = "<h3>6. Visualisasi Hasil Penelitian</h3><div style='display: flex; flex-wrap: wrap; gap: 20px;'>"
+    for name, path in plot_paths.items():
+        abs_path = os.path.join(script_dir, path)
+        if os.path.exists(abs_path):
+            with open(abs_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                img_html += f"""
+                <div style='flex: 1; min-width: 300px; max-width: 450px; text-align: center; border: 1px solid #ddd; padding: 10px; border-radius: 4px; margin-bottom: 20px;'>
+                    <img src='data:image/png;base64,{encoded_string}' style='width: 100%; height: auto;' />
+                    <p style='font-size: 12px; color: #666; font-style: italic; margin-top: 8px;'>Gambar: {name.replace('_', ' ').capitalize()}</p>
+                </div>
+                """
+    img_html += "</div>"
+    add_to_html("Visualisasi", img_html)
+
+    # HTML assembly with APA 7th Edition style override
+    css = """
+    <style>
+        body { font-family: "Times New Roman", Times, serif; margin: 40px; color: #222; line-height: 1.6; }
+        h1 { font-family: Arial, sans-serif; color: #2c3e50; border-bottom: 3px solid #2c3e50; padding-bottom: 10px; text-align: center; }
+        h3 { font-family: Arial, sans-serif; color: #34495e; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 40px; }
+        ul { padding-left: 20px; }
+        
+        /* APA Style Tables Overrides */
+        table { border-collapse: collapse; width: 100%; margin-top: 15px; margin-bottom: 35px; font-size: 13px; text-align: center; }
+        th, td { padding: 10px; border-bottom: 0.5px solid #ccc; }
+        th { font-weight: bold; border-top: 1.5px solid black; border-bottom: 1.5px solid black; background-color: transparent !important; }
+        tr:last-child td { border-bottom: 1.5px solid black; }
+        td, th { border-left: none !important; border-right: none !important; }
+        .table { border: none !important; }
+    </style>
+    """
+    html_out = f"<html><head>{css}</head><body><h1>Hasil Analisis DDA (APA Style & SPSS Style Output)</h1>{HTML_CONTENT}</body></html>"
+    
+    html_path = os.path.join(script_dir, 'spss_style_output.html')
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html_out)
+    print(f"\n[INFO] Laporan HTML dengan chart tersemat berhasil diekspor ke: {html_path}")
+
 if __name__ == "__main__":
-    DATA_FILE = 'game_logs.csv'
-    current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    data = load_and_preprocess(DATA_FILE)
+    data = load_and_preprocess()
     if data is not None:
-        print(f"Loaded {len(data)} rows from {len(data['sessionId'].unique())} sessions.\n")
+        term_df = analyze_descriptive(data)
+        marg, play, term = test_hypotheses(data, term_df)
+        analyze_dda_mechanism(data)
+        analyze_experience_influence(data, term_df)
+        generate_plots_and_html(marg, play, term, data)
 
-        # 1. Descriptive Statistics (APA)
-        print_descriptive_statistics(data)
-
-        # 2. Hypothesis Testing (APA)
-        print_hypothesis_testing(data)
-
-        # 3. Summary Table (APA)
-        print_apa_summary_table(data)
-
-        # 4. Mainstream Visualizations only
-        print("\n" + "="*70)
-        print("GENERATING VISUALIZATIONS...")
-        print("="*70 + "\n")
-        
-        plot_thinktime_boxplot(data, current_timestamp)
-        plot_thinktime_bar(data, current_timestamp)
-        plot_thinktime_distribution(data, current_timestamp)
-        plot_thinktime_by_turn(data, current_timestamp)
-        plot_scoremargin_boxplot(data, current_timestamp)
-        plot_scoremargin_bar(data, current_timestamp)
-        plot_score_progression(data, current_timestamp)
-        plot_score_diff_by_turn(data, current_timestamp)
-        
-        print("\n[INFO] Semua grafik berhasil di-generate!")
-        print(f"[INFO] Total 9 grafik PNG (300 dpi) telah disimpan di direktori yang sama.")
