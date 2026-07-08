@@ -69,9 +69,9 @@ class GridEvaluator():
             
             if current_player_type == "random":
                 move = Random_player().action(g)
-            elif current_player_type == "minimax1":
+            elif current_player_type in ["minimax", "minimax1"]:
                 move = Minimax(g).Run()
-            elif current_player_type == "mcts1":
+            elif current_player_type in ["mcts", "mcts1"]:
                 mcts_ai = ClassicalMCTS(g)
                 mcts_ai.num_sim = 300
                 move = mcts_ai.Run()

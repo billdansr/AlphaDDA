@@ -47,9 +47,25 @@ if __name__ == '__main__':
             for row in reader:
                 grid_data.append(row)
 
-        # Cari baris dengan DiffFrom50 terkecil. 
-        # Jika WinRate sama, pilih yang AvgMargin-nya paling mendekati -15.0 (paling forgiving)
-        best_config = min(grid_data, key=lambda x: (float(x['DiffFrom50']), abs(float(x['AvgMargin']) + 15.0)))
+        # Map DiffFrom50 and AvgMargin dynamically for robust loading
+        for row in grid_data:
+            # Fallback for DiffFrom50
+            diff_key = 'MeanDiffFrom50' if 'MeanDiffFrom50' in row else ('DiffFrom50' if 'DiffFrom50' in row else None)
+            row['computed_diff'] = float(row[diff_key]) if diff_key else 999.0
+            
+            # Fallback for AvgMargin
+            # If we have specific opponent margins, compute their average
+            m_keys = ["Margin_Random", "Margin_Minimax", "Margin_MCTS", "Margin_AlphaZero", "Margin_Minimax1", "Margin_MCTS1"]
+            margins = []
+            for k in m_keys:
+                if k in row:
+                    margins.append(float(row[k]))
+            if not margins and 'AvgMargin' in row:
+                margins.append(float(row['AvgMargin']))
+                
+            row['computed_margin'] = sum(margins) / len(margins) if margins else 0.0
+
+        best_config = min(grid_data, key=lambda x: (x['computed_diff'], abs(x['computed_margin'] + 15.0)))
         
         BEST_A = float(best_config['A_sim'])
         BEST_X0 = float(best_config['X0'])
@@ -63,7 +79,7 @@ if __name__ == '__main__':
     
     
     
-    opponents = ["random", "minimax", "mcts", "alphazero"]
+    opponents = ["random", "minimax1", "mcts1", "alphazero"]
     
     print("="*50)
     print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

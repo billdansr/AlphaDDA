@@ -17,7 +17,7 @@ if __name__ == '__main__':
     n_max_list = [200, 300, 400]
     
     # Lawan tanding sesuai standar paper (diadaptasi ke Congklak)
-    target_opponents = ["random", "minimax", "mcts", "alphazero"]
+    target_opponents = ["random", "minimax1", "mcts1", "alphazero"]
     
     # Setup Absolute Paths (Crucial for multiprocessing in Colab)
     base_path = "./"
@@ -78,8 +78,10 @@ if __name__ == '__main__':
                     
                     for opp in target_opponents:
                         win_rate, loss_rate, draw_rate, avg_margin = evaluator.run_bulk_test_custom("alphadda1", opp, a_sim, x0)
-                        win_rates[opp] = win_rate
-                        margins[opp] = avg_margin
+                        # map 'minimax1' to 'minimax' key and 'mcts1' to 'mcts' key for CSV saving
+                        key = "minimax" if opp == "minimax1" else ("mcts" if opp == "mcts1" else opp)
+                        win_rates[key] = win_rate
+                        margins[key] = avg_margin
                         diffs.append(abs(50.0 - win_rate))
                     
                     mean_diff = mean(diffs)
