@@ -215,7 +215,7 @@ def test_hypotheses(df, terminal_df):
     dda_margin = paired_margin[True]
     nodda_margin = paired_margin[False]
     diff_margin = dda_margin - nodda_margin
-    _, p_norm_margin = stats.shapiro(diff_margin)
+    shapiro_w_margin, p_norm_margin = stats.shapiro(diff_margin)
     
     if p_norm_margin > 0.05:
         t_margin, p_margin = stats.ttest_rel(dda_margin, nodda_margin)
@@ -230,7 +230,7 @@ def test_hypotheses(df, terminal_df):
     dda_playtime = paired_playtime[True]
     nodda_playtime = paired_playtime[False]
     diff_playtime = dda_playtime - nodda_playtime
-    _, p_norm_playtime = stats.shapiro(diff_playtime)
+    shapiro_w_playtime, p_norm_playtime = stats.shapiro(diff_playtime)
     
     if p_norm_playtime > 0.05:
         t_playtime, p_playtime = stats.ttest_rel(dda_playtime, nodda_playtime)
@@ -241,6 +241,41 @@ def test_hypotheses(df, terminal_df):
         
     cohen_playtime = _apa_effect_size_cohens_d(diff_playtime.mean(), diff_playtime.std())
     
+    # Generate Shapiro-Wilk Table
+    dec_margin = "Normal (p > .05)" if p_norm_margin > 0.05 else "Tidak Normal (p &le; .05)"
+    dec_playtime = "Normal (p > .05)" if p_norm_playtime > 0.05 else "Tidak Normal (p &le; .05)"
+    
+    normality_html = f"""
+    <table class="table-apa" style="width: 70%; margin: 15px auto 35px auto;">
+      <thead>
+        <tr style="border-top: 1.5px solid black; border-bottom: 1px solid black;">
+          <th style="text-align: left; padding: 8px;">Variable (Paired Differences)</th>
+          <th style="padding: 8px;">Shapiro-Wilk W</th>
+          <th style="padding: 8px;">p-value</th>
+          <th style="padding: 8px;">Decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: left; padding: 8px;">Delta Score (&Delta;S_DDA - &Delta;S_NonDDA)</td>
+          <td style="padding: 8px;">{shapiro_w_margin:.3f}</td>
+          <td style="padding: 8px;">{_apa_interpret_p(p_norm_margin)}</td>
+          <td style="padding: 8px;">{dec_margin}</td>
+        </tr>
+        <tr style="border-bottom: 1.5px solid black;">
+          <td style="text-align: left; padding: 8px;">Playtime (Playtime_DDA - Playtime_NonDDA)</td>
+          <td style="padding: 8px;">{shapiro_w_playtime:.3f}</td>
+          <td style="padding: 8px;">{_apa_interpret_p(p_norm_playtime)}</td>
+          <td style="padding: 8px;">{dec_playtime}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="font-size: 11px; text-align: center; font-family: 'Times New Roman'; margin-top: -25px; margin-bottom: 30px;">
+      <i>Note.</i> N = 10 pairs. If p > .05, data is considered normally distributed (parametric test is appropriate).
+    </div>
+    """
+    add_to_html("3c. Shapiro-Wilk Normality Test Results (Table 1b)", normality_html)
+
     # Hitung p-value one-tailed
     p_margin_val = p_margin / 2 if diff_margin.mean() < 0 else 1 - p_margin / 2
     p_playtime_val = p_playtime / 2 if diff_playtime.mean() > 0 else 1 - p_playtime / 2

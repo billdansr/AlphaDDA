@@ -4,99 +4,117 @@
 import numpy as np
 from copy import deepcopy
 import math
+from congklak import Congklak
 
 class Node():
-    def __init__(self, board, player, move=None, parent=None):
-        self.board = board
-        self.player = player
-        self.move = move
-        self.parent = parent
+    def __init__(self, state, player, move = None, terminal = False, winner = 0, parent = None):
+        self.n        = 0 # the visit count
+        self.q        = 0
+        self.p        = player
+        self.move     = move
+        self.state    = state
         self.children = []
-        self.wins = 0
-        self.visits = 0
+        self.parent   = parent
+        self.terminal = terminal
+        self.winner   = winner
 
-class MCTS():
+    def Get_state(self):
+        return deepcopy(self.state)
+
+    def Get_player(self):
+        return deepcopy(self.p)
+
+    def Add_child(self, state, player, move, terminal, winner):
+        child = Node(state, player, move, terminal, winner, self)
+        self.children.append(child)
+
+class MCTS:
     def __init__(self, game):
-        self.game = game
-        self.num_sim = 100
+        self.g = game
+        self.p = self.g.current_player
+
+        self.root = Node(state = self.g.Get_board(), player = self.g.current_player)
+
+        self.num_sim = 100 # the number of simulations
+        self.th_open_leaf = 5 # A leaf node is expanded if its visit count is >= this number.
+
+    def Expand_node(self, node):
+        temp_g = Congklak()
+        temp_g.board = node.Get_state()
+        temp_g.current_player = node.Get_player()
+        valid_moves = temp_g.Get_valid_moves()
+        
+        # If no valid moves but game is not ended (skipped turn)
+        if len(valid_moves) == 0 and not temp_g.Check_game_end():
+            temp_g.current_player *= -1
+            valid_moves = temp_g.Get_valid_moves()
+
+        for m in valid_moves:
+            temp_g.board = node.Get_state()
+            temp_g.current_player = node.Get_player()
+            temp_g.Play_action(m)
+            player = temp_g.current_player
+            terminal = temp_g.Check_game_end()
+            winner = temp_g.Get_winner()
+            state = temp_g.Get_board()
+            node.Add_child(state, player, m, terminal, winner)
+
+        if len(node.children) > 0:
+            node.children[0].n = 1
 
     def Run(self):
-        # We need a clean game instance for simulation
-        root = Node(deepcopy(self.game.board), self.game.current_player)
-
         for _ in range(self.num_sim):
-            node = root
-            temp_game = deepcopy(self.game)
-            temp_game.board = deepcopy(node.board)
-            temp_game.current_player = node.player
+            node = self.root
+            while node.terminal == False:
+                if len(node.children) == 0 and (node == self.root or node.n >= self.th_open_leaf):
+                    self.Expand_node(node)
+                else:
+                    if len(node.children) == 0:
+                        # Playout step
+                        node.winner = self.random_play(node)
+                        break
+                    else:
+                        # Selection step
+                        node = self.Search(node)
 
-            # 1. Selection
-            while len(node.children) > 0:
-                node = self.Select_child(node)
-                if temp_game.current_player != node.parent.player:
-                    temp_game.current_player = node.parent.player
-                temp_game.Play_action(node.move)
+            reward = deepcopy(node.winner)
+            self.BACKUP(node, reward)
 
-            # 2. Expansion
-            winner = temp_game.Get_winner()
-            is_end = temp_game.Check_game_end()
+        return self.Decide_move()
+
+    def random_play(self, node):
+        temp_g = Congklak()
+        temp_g.board = node.Get_state()
+        temp_g.current_player = node.Get_player()
+
+        while not temp_g.Check_game_end():
+            valid_moves = temp_g.Get_valid_moves()
+            if len(valid_moves) == 0:
+                temp_g.current_player *= -1
+                continue
+            move = np.random.choice(valid_moves)
+            temp_g.Play_action(move)
             
-            if not is_end:
-                valid_moves = temp_game.Get_valid_moves()
-                if len(valid_moves) == 0:
-                    temp_game.current_player *= -1
-                    valid_moves = temp_game.Get_valid_moves()
-                
-                for move in valid_moves:
-                    sim_game = deepcopy(temp_game)
-                    sim_game.Play_action(move)
-                    child = Node(deepcopy(sim_game.board), sim_game.current_player, move, node)
-                    node.children.append(child)
-                node = node.children[np.random.randint(len(node.children))]
-                temp_game.Play_action(node.move)
+        return temp_g.Get_winner()
 
-            # 3. Simulation (Rollout)
-            while not temp_game.Check_game_end():
-                moves = temp_game.Get_valid_moves()
-                if len(moves) == 0:
-                    temp_game.current_player *= -1
-                    continue
-                temp_game.Play_action(np.random.choice(moves))
-            
-            # 4. Backpropagation
-            result = temp_game.Get_winner()
-            self.Backpropagate(node, result)
+    def l(self, q, n, N):
+        # UCT score
+        return float(q)/(n + 1e-7) + 0.5 * math.sqrt(2 * math.log(N + 1) / (n + 1e-7))
 
-        # Output move with most visits
-        counts = [child.visits for child in root.children]
-        return root.children[np.argmax(counts)].move
-
-    def Select_child(self, node):
-        # UCB1
-        log_total = math.log(node.visits)
-        best_score = -float('inf')
-        best_child = None
-        
-        for child in node.children:
-            if child.visits == 0:
-                return child
-            # Perspective: node.player is the one choosing
-            # We want to maximize wins for node.player
-            win_rate = child.wins / child.visits
-            if child.player != node.player:
-                win_rate = 1 - win_rate # Opponent turn result
-            
-            score = win_rate + 1.41 * math.sqrt(log_total / child.visits)
-            if score > best_score:
-                best_score = score
-                best_child = child
+    def Search(self, node):
+        N = np.sum(np.array([i.n for i in node.children])) # the visit count of the parent node
+        best_child = node.children[np.argmax(np.array([self.l(i.q, i.n, N) for i in node.children]))]
         return best_child
 
-    def Backpropagate(self, node, result):
-        while node is not None:
-            node.visits += 1
-            if result == node.player:
-                node.wins += 1
-            elif result == 0:
-                node.wins += 0.5
+    def Decide_move(self):
+        # The move corresponding to the child node with the maximum visit count is selected.
+        return self.root.children[np.argmax(np.array([i.n for i in self.root.children]))].move
+
+    def BACKUP(self, node, reward):
+        while node != None:
+            node.n += 1
+            if node.parent is not None:
+                # node.parent.p is the player who chose the move leading to node.
+                # So we update from their perspective.
+                node.q += reward * node.parent.p
             node = node.parent
