@@ -11,21 +11,24 @@ import argparse
 from datetime import datetime
 from test_dda import GridEvaluator
 
-def calculate_elo_update(rating_a, rating_b, score_a, score_b, k_factor=8):
+def calculate_elo_update(rating_a, rating_b, score_a, score_b, k_factor=8, n_g=2):
     """
-    Menghitung update Elo rating untuk Pemain A dan Pemain B.
-    score_a: poin aktual Pemain A (Menang=1.0, Seri=0.5, Kalah=0.0)
-    score_b: poin aktual Pemain B (Menang=1.0, Seri=0.5, Kalah=0.0)
-    k_factor: K-Factor (nilai default dari paper K=8)
+    Menghitung pembaruan Elo rating setelah sejumlah n_g pertandingan dimainkan.
+    rating_a: rating lama agen A
+    rating_b: rating lama agen B
+    score_a: skor aktual (N_win) yang diperoleh agen A selama n_g pertandingan
+    score_b: skor aktual (N_win) yang diperoleh agen B selama n_g pertandingan
+    k_factor: K-factor (default K=8)
+    n_g: jumlah pertandingan (default N_G=2)
     """
-    # Menghitung probabilitas kemenangan masing-masing pemain (Persamaan 16)
+    # Probabilitas agen A mengalahkan agen B
     p_a_defeats_b = 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a) / 400.0))
-    p_b_defeats_a = 1.0 - p_a_defeats_b
+    # Probabilitas agen B mengalahkan agen A
+    p_b_defeats_a = 1.0 / (1.0 + 10.0 ** ((rating_a - rating_b) / 400.0))
     
-    # Update Elo rating (Persamaan 17 dengan NG = 1 game per pencocokan aktual)
-    # Karena kita memperhitungkan score_a & score_b per single game secara sekuensial:
-    new_rating_a = rating_a + k_factor * (score_a - p_a_defeats_b)
-    new_rating_b = rating_b + k_factor * (score_b - p_b_defeats_a)
+    # Pembaruan rating sesuai dengan formulasi: e'(A) = e(A) + K * (N_win - N_G * P(A>B))
+    new_rating_a = rating_a + k_factor * (score_a - n_g * p_a_defeats_b)
+    new_rating_b = rating_b + k_factor * (score_b - n_g * p_b_defeats_a)
     
     return new_rating_a, new_rating_b
 
@@ -187,11 +190,9 @@ if __name__ == '__main__':
             rating_a = elo_ratings[agent_a]
             rating_b = elo_ratings[agent_b]
             
-            p_a_defeats_b = 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a) / 400.0))
-            p_b_defeats_a = 1.0 - p_a_defeats_b
-            
-            new_rating_a = rating_a + K_FACTOR * (total_score_a - 2.0 * p_a_defeats_b)
-            new_rating_b = rating_b + K_FACTOR * (total_score_b - 2.0 * p_b_defeats_a)
+            new_rating_a, new_rating_b = calculate_elo_update(
+                rating_a, rating_b, total_score_a, total_score_b, k_factor=K_FACTOR, n_g=2
+            )
             
             elo_ratings[agent_a] = new_rating_a
             elo_ratings[agent_b] = new_rating_b

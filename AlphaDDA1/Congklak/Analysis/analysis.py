@@ -257,13 +257,13 @@ def test_hypotheses(df, terminal_df):
       </thead>
       <tbody>
         <tr>
-          <td style="text-align: left; padding: 8px;">Delta Score (&Delta;S_DDA - &Delta;S_NonDDA)</td>
+          <td style="text-align: left; padding: 8px;">&Delta;score (&Delta;score_DDA - &Delta;score_NonDDA)</td>
           <td style="padding: 8px;">{shapiro_w_margin:.3f}</td>
           <td style="padding: 8px;">{_apa_interpret_p(p_norm_margin)}</td>
           <td style="padding: 8px;">{dec_margin}</td>
         </tr>
         <tr style="border-bottom: 1.5px solid black;">
-          <td style="text-align: left; padding: 8px;">Playtime (Playtime_DDA - Playtime_NonDDA)</td>
+          <td style="text-align: left; padding: 8px;">playtime (playtime_DDA - playtime_NonDDA)</td>
           <td style="padding: 8px;">{shapiro_w_playtime:.3f}</td>
           <td style="padding: 8px;">{_apa_interpret_p(p_norm_playtime)}</td>
           <td style="padding: 8px;">{dec_playtime}</td>
@@ -304,7 +304,7 @@ def test_hypotheses(df, terminal_df):
       </thead>
       <tbody>
         <tr>
-          <td style="text-align: left; padding: 8px;">Delta Score (&Delta;S)</td>
+          <td style="text-align: left; padding: 8px;">&Delta;score</td>
           <td style="padding: 8px;">{dda_margin.mean():.2f}</td>
           <td style="padding: 8px;">{dda_margin.std():.2f}</td>
           <td style="padding: 8px;">{nodda_margin.mean():.2f}</td>
@@ -315,7 +315,7 @@ def test_hypotheses(df, terminal_df):
           <td style="padding: 8px;">{cohen_margin:.2f}</td>
         </tr>
         <tr style="border-bottom: 1.5px solid black;">
-          <td style="text-align: left; padding: 8px;">Playtime (seconds)</td>
+          <td style="text-align: left; padding: 8px;">playtime (seconds)</td>
           <td style="padding: 8px;">{dda_playtime.mean():.2f}</td>
           <td style="padding: 8px;">{dda_playtime.std():.2f}</td>
           <td style="padding: 8px;">{nodda_playtime.mean():.2f}</td>
@@ -335,27 +335,7 @@ def test_hypotheses(df, terminal_df):
     add_to_html("4. Results of Paired t-Tests Comparing DDA and Non-DDA (Table 2)", table2_html)
     return paired_margin, paired_playtime, terminal_df
 
-# ──────────────────────────────────────────────────────────────
-# 3. ANALISIS MEKANISME INTERNAL DDA (VALIDATION)
-# ──────────────────────────────────────────────────────────────
-def analyze_dda_mechanism(df):
-    # Analisis hubungan antara evaluasi posisi (v) dan jumlah simulasi pencarian MCTS
-    # DDA dinamis AlphaZero mengurangi simulasi ketika memimpin (v tinggi) dan menambahnya saat tertinggal (v rendah).
-    dda_moves = df[(df['isDda'] == True) & (df['player'] == -1) & (df['v'].notnull()) & (df['simulations'].notnull())]
-    if not dda_moves.empty:
-        corr, p_corr = stats.pearsonr(dda_moves['v'], dda_moves['simulations'])
-        
-        mech_text = f"""
-        <p>Hubungan antara Evaluasi Nilai Board State (<i>v</i>) dan Pencarian Simulasi MCTS pada AI:</p>
-        <ul>
-            <li><b>Korelasi Pearson (r):</b> {corr:.3f} ({_apa_interpret_p(p_corr)})</li>
-            <li><b>Penjelasan Mekanisme:</b> Korelasi negatif yang signifikan menunjukkan DDA berhasil bekerja secara adaptif. Saat AI mengevaluasi posisinya menguntungkan (v mendekati 1), DDA secara dinamis menurunkan simulasi (membuat AI bermain lebih lemah). Sebaliknya, saat AI tertekan (v mendekati -1), DDA meningkatkan jumlah simulasi agar AI bermain lebih cerdas.</li>
-        </ul>
-        """
-        add_to_html("5. Validasi Mekanisme Internal DDA", mech_text)
-        print(f"\n[DDA MECHANISM] Korelasi v vs simulations: r={corr:.3f}, p={p_corr:.4f}")
-    else:
-        print("\n[DDA MECHANISM] Data v/simulations tidak ditemukan.")
+
 
 # ──────────────────────────────────────────────────────────────
 # 3b. ANALISIS PENGARUH PENGALAMAN BERMAIN (EXPERIENCED VS INEXPERIENCED)
@@ -380,7 +360,7 @@ def analyze_experience_influence(df, terminal_df):
     part_playtime = playtime_df.groupby(['participant', 'Experience', 'isDda'])['TotalPlaytime'].mean().unstack().reset_index()
     
     t3_rows = []
-    for metric_name, data_df in [('Delta Score (&Delta;S)', part_margin), ('Playtime (seconds)', part_playtime)]:
+    for metric_name, data_df in [('&Delta;score', part_margin), ('playtime (seconds)', part_playtime)]:
         for dda_cond in [True, False]:
             cond_str = "DDA" if dda_cond else "Non-DDA"
             y_group = data_df[data_df['Experience'] == 'Y'][dda_cond].dropna()
@@ -460,46 +440,46 @@ def generate_plots_and_html(paired_margin, paired_playtime, terminal_df, df):
     
     plot_paths = {}
 
-    # 1a. Bar Chart H1 (Margin / Delta Score)
+    # 1a. Bar Chart H1 (Margin / Δscore)
     if not paired_margin.empty:
         plot_df = paired_margin.reset_index().melt(id_vars='participant', value_name='Margin', var_name='isDda')
         plt.figure(figsize=(6, 4))
         sns.barplot(data=plot_df, x='isDda', y='Margin', errorbar='se', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, capsize=0.1)
-        plt.title('Mean ΔSkor')
+        plt.title('Mean Δscore')
         plt.xticks([0, 1], ['Non-DDA', 'DDA'])
-        plt.ylabel('ΔSkor')
+        plt.ylabel('Δscore')
         plt.xlabel('Kondisi')
         plt.tight_layout()
         margin_bar_path = f'chart_H1_margin_bar_{ts}.png'
         plt.savefig(os.path.join(script_dir, margin_bar_path))
         plt.close()
-        plot_paths['mean_delta_score'] = margin_bar_path
+        plot_paths['mean_deltascore'] = margin_bar_path
 
-    # 1b. Boxplot H1 (Margin / Delta Score)
+    # 1b. Boxplot H1 (Margin / Δscore)
     if not paired_margin.empty:
         plot_df = paired_margin.reset_index().melt(id_vars='participant', value_name='Margin', var_name='isDda')
         plt.figure(figsize=(6, 4))
         sns.boxplot(data=plot_df, x='isDda', y='Margin', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, width=0.5, showfliers=False)
         sns.stripplot(data=plot_df, x='isDda', y='Margin', color='black', alpha=0.6, jitter=True, size=5)
-        # plt.title('Distribusi ΔSkor (Game Balance)')
-        plt.title('Distribusi ΔSkor')
+        # plt.title('Distribusi Δscore (Game Balance)')
+        plt.title('Distribusi Δscore')
         plt.xticks([0, 1], ['Non-DDA', 'DDA'])
-        plt.ylabel('ΔSkor')
+        plt.ylabel('Δscore')
         plt.xlabel('Kondisi')
         plt.tight_layout()
         margin_path = f'chart_H1_margin_box_{ts}.png'
         plt.savefig(os.path.join(script_dir, margin_path))
         plt.close()
-        plot_paths['delta_score_distribution'] = margin_path
+        plot_paths['deltascore_distribution'] = margin_path
         
-    # 2a. Bar Chart H2 (Playtime / Waktu Berpikir)
+    # 2a. Bar Chart H2 (playtime)
     if not paired_playtime.empty:
         plot_df2 = paired_playtime.reset_index().melt(id_vars='participant', value_name='Playtime', var_name='isDda')
         plt.figure(figsize=(6, 4))
         sns.barplot(data=plot_df2, x='isDda', y='Playtime', errorbar='se', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, capsize=0.1)
-        plt.title('Mean Playtime')
+        plt.title('Mean playtime')
         plt.xticks([0, 1], ['Non-DDA', 'DDA'])
-        plt.ylabel('Total Playtime (detik)')
+        plt.ylabel('Total playtime (detik)')
         plt.xlabel('Kondisi')
         plt.tight_layout()
         playtime_bar_path = f'chart_H2_playtime_bar_{ts}.png'
@@ -507,16 +487,16 @@ def generate_plots_and_html(paired_margin, paired_playtime, terminal_df, df):
         plt.close()
         plot_paths['mean_playtime'] = playtime_bar_path
 
-    # 2b. Boxplot H2 (Playtime / Waktu Berpikir)
+    # 2b. Boxplot H2 (playtime)
     if not paired_playtime.empty:
         plot_df2 = paired_playtime.reset_index().melt(id_vars='participant', value_name='Playtime', var_name='isDda')
         plt.figure(figsize=(6, 4))
         sns.boxplot(data=plot_df2, x='isDda', y='Playtime', hue='isDda', palette=['#e74c3c', '#2ecc71'], legend=False, width=0.5, showfliers=False)
         sns.stripplot(data=plot_df2, x='isDda', y='Playtime', color='black', alpha=0.6, jitter=True, size=5)
-        # plt.title('Distribusi Waktu Berpikir (Cognitive Load)')
-        plt.title('Distribusi Waktu Berpikir')
+        # plt.title('Distribusi playtime')
+        plt.title('Distribusi playtime')
         plt.xticks([0, 1], ['Non-DDA', 'DDA'])
-        plt.ylabel('thinkTime (detik)')
+        plt.ylabel('playtime (detik)')
         plt.xlabel('Kondisi')
         plt.tight_layout()
         playtime_path = f'chart_H2_playtime_box_{ts}.png'
@@ -524,20 +504,6 @@ def generate_plots_and_html(paired_margin, paired_playtime, terminal_df, df):
         plt.close()
         plot_paths['playtime_distribution'] = playtime_path
 
-    # 3. Scatter Plot Mekanisme DDA (v vs simulations)
-    dda_moves = df[(df['isDda'] == True) & (df['player'] == -1) & (df['v'].notnull()) & (df['simulations'].notnull())]
-    if not dda_moves.empty:
-        plt.figure(figsize=(6, 4))
-        sns.regplot(data=dda_moves, x='v', y='simulations', scatter_kws={'alpha':0.4, 'color':'#2980b9'}, line_kws={'color':'#c0392b', 'linewidth': 2})
-        plt.title('Mekanisme AlphaDDA\n(State Value vs MCTS Simulations)')
-        plt.xlabel('Nilai Evaluasi Posisi (v)')
-        plt.ylabel('Jumlah Simulasi MCTS')
-        plt.tight_layout()
-        mech_path = f'chart_dda_mechanism_{ts}.png'
-        plt.savefig(os.path.join(script_dir, mech_path))
-        plt.close()
-        plot_paths['dda_mechanism'] = mech_path
-        
     # 4. Grafik Garis Trajektori V-Value (Turn-by-Turn)
     v_moves = df[(df['player'] == -1) & (df['v'].notnull())]
     if not v_moves.empty:
@@ -576,7 +542,7 @@ def generate_plots_and_html(paired_margin, paired_playtime, terminal_df, df):
         plt.close()
         plot_paths['scorediff_trajectory'] = scorediff_path
 
-    # 4c. Boxplot Think Time per Turn (Distribusi Waktu Keputusan per Langkah)
+    # 4c. Boxplot thinkTime per Langkah (Distribusi thinkTime per Langkah)
     human_moves_all = df[df['player'] == 1].dropna(subset=['thinkTime']).copy()
     if not human_moves_all.empty:
         human_moves_all['isDda_str'] = human_moves_all['isDda'].map({True: 'DDA', False: 'Non-DDA'})
@@ -584,7 +550,7 @@ def generate_plots_and_html(paired_margin, paired_playtime, terminal_df, df):
         sns.boxplot(data=human_moves_all, x='isDda_str', y='thinkTime', hue='isDda_str', palette={'DDA': '#2ecc71', 'Non-DDA': '#e74c3c'}, legend=False, width=0.5, showfliers=False)
         sample_moves = human_moves_all.sample(min(500, len(human_moves_all)), random_state=42)
         sns.stripplot(data=sample_moves, x='isDda_str', y='thinkTime', color='black', alpha=0.3, jitter=True, size=3)
-        plt.title('Distribusi Waktu Berpikir per Langkah\n(thinkTime per turn)')
+        plt.title('Distribusi thinkTime per Langkah\n(thinkTime per turn)')
         plt.xlabel('Kondisi')
         plt.ylabel('thinkTime (detik)')
         plt.tight_layout()
@@ -592,12 +558,12 @@ def generate_plots_and_html(paired_margin, paired_playtime, terminal_df, df):
         plt.savefig(os.path.join(script_dir, tt_path))
         plt.close()
         plot_paths['thinktime_per_turn'] = tt_path
-    # 4d. Grafik Trajektori Think Time per Turn (P1)
+    # 4d. Grafik Trajektori thinkTime per Turn (P1)
     if not human_moves_all.empty:
         plt.figure(figsize=(7, 4))
         plot_tt_traj = human_moves_all[human_moves_all['turn'] <= 100].copy()
         sns.lineplot(data=plot_tt_traj, x='turn', y='thinkTime', hue='isDda_str', palette={'DDA': '#2ecc71', 'Non-DDA': '#e74c3c'}, errorbar='se', linewidth=2)
-        plt.title('Trajektori Rata-Rata Waktu Berpikir Sepanjang Permainan')
+        plt.title('Trajektori Rata-Rata thinkTime Sepanjang Permainan')
         plt.xlabel('Giliran (Turn)')
         plt.ylabel('thinkTime (detik)')
         plt.legend(title='Kondisi')
@@ -678,7 +644,6 @@ if __name__ == "__main__":
     if data is not None:
         term_df = analyze_descriptive(data)
         marg, play, term = test_hypotheses(data, term_df)
-        analyze_dda_mechanism(data)
         analyze_experience_influence(data, term_df)
         generate_plots_and_html(marg, play, term, data)
 
